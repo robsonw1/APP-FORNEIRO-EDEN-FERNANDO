@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => ({
     proxy: {
       '/api': {
         // Use explicit IPv4 to avoid IPv6 (::1) resolution issues on some Windows setups
-        target: 'app-forneiro-eden.aezap.site/backend',
+        target: 'app-forneiro-eden-backend.r7rett.easypanel.host',
         changeOrigin: true,
       },
     },
