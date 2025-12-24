@@ -1,5 +1,6 @@
 {
-  "VITE_API_BASE": "",
-  "VITE_WS_URL": ""
+  "VITE_API_BASE": "https://app-forneiro-eden.aezap.site/backend",
+  "VITE_WS_URL": "wss://app-forneiro-eden.aezap.site/backend"
 }
+
 
