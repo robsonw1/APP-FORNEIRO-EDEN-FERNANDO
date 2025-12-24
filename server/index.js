@@ -18,7 +18,7 @@ const app = express();
 // CORS - MIDDLEWARE MANUAL (ADICIONADO NO INÍCIO)
 // ========================================
 app.use((req, res, next) => {
-  res.header('Access-Control-Allow-Origin', 'https://forneiro-eden-app.aezap.site');
+  res.header('Access-Control-Allow-Origin', 'https://app-forneiro-eden.aezap.site');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
   res.header('Access-Control-Allow-Credentials', 'true');
@@ -160,6 +160,41 @@ if (process.env.NODE_ENV === 'production') {
     return next();
   });
 }
+
+// ========================================
+// CACHE HEADERS MIDDLEWARE - Cache Busting Strategy
+// ========================================
+// This middleware implements a smart caching strategy:
+// 1. HTML files (index.html) & version.json: No-cache (always check with server)
+// 2. JS/CSS with hash in filename: Cache for 1 year (safe to cache long-term)
+// 3. Other assets: Cache for 1 week with revalidation
+app.use((req, res, next) => {
+  const pathname = req.path || '';
+  
+  // No cache for critical files that should always be fresh
+  if (pathname === '/' || pathname === '/index.html' || pathname.includes('version.json') || pathname.includes('manifest.json')) {
+    res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    return next();
+  }
+  
+  // Cache busted assets: Files with hash in name (e.g., main.a1b2c3d.js) can be cached long-term
+  // because the filename changes whenever the content changes
+  if (pathname.match(/\.[a-f0-9]{8}\.(js|css|png|jpg|jpeg|gif|svg|woff|woff2)$/i)) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable'); // 1 year
+    return next();
+  }
+  
+  // Service Worker should not be cached for long
+  if (pathname === '/sw.js') {
+    res.setHeader('Cache-Control', 'public, max-age=3600, must-revalidate'); // 1 hour
+    return next();
+  }
+  
+  // Default: Short cache with revalidation
+  res.setHeader('Cache-Control', 'public, max-age=604800, must-revalidate'); // 1 week
+  return next();
+});
 
 // Admin auth middleware: requires ADMIN_TOKEN env var. Supports Authorization: Bearer <token> or x-admin-token header.
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || '';
