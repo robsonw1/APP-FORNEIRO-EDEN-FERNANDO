@@ -1,29 +1,52 @@
-// Service Worker with safe update strategy:
-// - network-first for navigation requests (index.html)
-// - cache-first for other GET assets with background update
-// - cleans old caches on activate
-// - supports skipWaiting via message
+// Service Worker with automatic cache invalidation on version change
+// The version is dynamically set at build time and checked on every install/activate
 
-// Bump this version on deploy to force clients to install the new SW and clear old caches.
-const CACHE_NAME = 'forneiro-eden-v3';
+let CACHE_NAME = 'forneiro-eden-v1'; // Fallback version
 const PRECACHE_URLS = ['/', '/index.html'];
 
+// Load version from version.json (generated at build time)
+async function loadVersion() {
+  try {
+    const response = await fetch('/version.json');
+    if (response.ok) {
+      const data = await response.json();
+      const newVersion = data.version || 'v1';
+      CACHE_NAME = `forneiro-eden-${newVersion}`;
+      console.log(`[SW] Cache version set to: ${CACHE_NAME}`);
+      return CACHE_NAME;
+    }
+  } catch (e) {
+    console.warn('[SW] Failed to load version.json, using fallback:', e);
+  }
+  return CACHE_NAME;
+}
+
+// Initialize version on install
 self.addEventListener('install', (event) => {
+  console.log('[SW] Install event');
   // Activate faster
   self.skipWaiting();
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(PRECACHE_URLS))
+    loadVersion().then((cacheName) => 
+      caches.open(cacheName).then((cache) => cache.addAll(PRECACHE_URLS))
+    )
   );
 });
 
 self.addEventListener('activate', (event) => {
+  console.log('[SW] Activate event');
   event.waitUntil(
-    caches.keys().then((keys) => Promise.all(
-      keys.map((key) => {
-        if (key !== CACHE_NAME) return caches.delete(key);
-        return Promise.resolve();
-      })
-    )).then(() => self.clients.claim())
+    loadVersion().then((cacheName) =>
+      caches.keys().then((keys) => Promise.all(
+        keys.map((key) => {
+          if (key !== cacheName) {
+            console.log(`[SW] Deleting old cache: ${key}`);
+            return caches.delete(key);
+          }
+          return Promise.resolve();
+        })
+      )).then(() => self.clients.claim())
+    )
   );
 });
 
@@ -98,6 +121,14 @@ self.addEventListener('fetch', (event) => {
   } catch (err) {
     // fallback safe behavior
     event.respondWith(fetch(req).catch(() => caches.match(req)));
+  }
+});
+
+// Handle messages from clients (e.g., skip waiting after update)
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('[SW] Received SKIP_WAITING message, activating update');
+    self.skipWaiting();
   }
 });
 
