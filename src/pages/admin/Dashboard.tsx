@@ -8,6 +8,7 @@ import ProductList from './components/ProductList';
 import AddProductModal from './components/AddProductModal';
 import EstablishmentSettings from './components/EstablishmentSettings';
 import Neighborhoods from './Neighborhoods';
+import ChangePasswordDialog from './components/ChangePasswordDialog';
 
 const Dashboard = () => {
   const { products, updateProduct, createProduct, deleteProduct } = useProducts();
@@ -24,6 +25,10 @@ const Dashboard = () => {
 
   return (
     <div className="container mx-auto p-6">
+      <div className="flex justify-between items-center mb-6">
+        <h1 className="text-3xl font-bold">Painel de Administração</h1>
+        <ChangePasswordDialog />
+      </div>
       <div className="space-y-4">
         <Accordion type="single" collapsible defaultValue="establishment">
           <AccordionItem value="establishment">
