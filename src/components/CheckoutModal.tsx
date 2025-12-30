@@ -9,7 +9,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { toast } from "@/hooks/use-toast";
-import { ArrowLeft, Check, MapPin, CreditCard, Clock } from "lucide-react";
+import { ArrowLeft, Check, MapPin, CreditCard, Clock, Loader2 } from "lucide-react";
 import { CartItem } from "@/hooks/useCart";
 import { useProducts } from '@/hooks/useProducts';
 import { PixPaymentModal } from "./PixPaymentModal";
@@ -33,6 +33,7 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
   const [deliveryFee, setDeliveryFee] = useState(0);
   const [isCalculatingDelivery, setIsCalculatingDelivery] = useState(false);
+  const [isLoadingConfirmation, setIsLoadingConfirmation] = useState(false);
   const [isPixModalOpen, setIsPixModalOpen] = useState(false);
   const [currentOrderId, setCurrentOrderId] = useState<string | null>(null);
   const [currentOrderData, setCurrentOrderData] = useState<any>(null);
@@ -425,7 +426,8 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
       }
 
         // Success: prepare WhatsApp URL and show confirmation
-        // Notify parent that the print was triggered successfully so it can clear the cart
+        // Wait 3 seconds before showing confirmation popup to allow the cart to be cleared
+        // and the state to be updated, so the customer can make a new order without page reload
         try {
           if (typeof onPrintSuccess === 'function') onPrintSuccess();
         } catch (err) {
@@ -437,8 +439,13 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
       const waUrl = `https://wa.me/${pizzariaNumber}?text=${encodeURIComponent(message)}`;
       setWhatsappUrl(waUrl);
 
-      // Show confirmation popup (step 3). The popup includes Ok and WhatsApp buttons.
+      // Show loading state and wait 5 seconds before showing confirmation popup
+      // During this time, the cart is cleared and app state is reset
+      setIsLoadingConfirmation(true);
       setStep(3);
+      setTimeout(() => {
+        setIsLoadingConfirmation(false);
+      }, 5000);
 
       // NOTE: onOrderComplete() and onClose() will be called only after user confirms (Ok) or optionally
       // after they press the WhatsApp button (handled by the UI below). This keeps UX in-app and non-forced.
@@ -698,6 +705,22 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
 
   const renderStep3 = () => {
     const eta = deliveryType === 'entrega' ? '40-60 minutos' : '20-40 minutos';
+    
+    // Show loading state while processing order
+    if (isLoadingConfirmation) {
+      return (
+        <div className="space-y-6 text-center py-12">
+          <div className="text-center">
+            <div className="mx-auto h-20 w-20 bg-blue-100 rounded-full flex items-center justify-center mb-4">
+              <Loader2 className="h-10 w-10 text-blue-600 animate-spin" />
+            </div>
+            <h3 className="text-2xl font-semibold text-blue-600 mb-2">Processando Pedido</h3>
+            <p className="text-muted-foreground mb-6">Seu pedido está sendo enviado para a cozinha...</p>
+          </div>
+        </div>
+      );
+    }
+    
     return (
       <div className="space-y-6 text-center">
         <div className="text-center">
