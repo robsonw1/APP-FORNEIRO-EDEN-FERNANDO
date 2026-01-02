@@ -220,7 +220,7 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
       try {
         setIsProcessing(true);
         
-        // Monta os dados do pedido
+        // Monta os dados do pedido com TODAS as informações necessárias
         const orderData = {
           pedidoId: `PEDIDO-${Date.now()}`,
           items: items.map(item => ({
@@ -229,13 +229,22 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
             preco: item.price,
             subtotal: item.price * item.quantity
           })),
+          subtotal: subtotal,
+          taxaEntrega: deliveryFee,
           total: total,
           cliente: {
             nome: customerData.name || 'Cliente',
             telefone: customerData.phone || '',
-            endereco: customerData.address || ''
+            endereco: customerData.address || '',
+            bairro: customerData.neighborhood || '',
+            referencia: customerData.reference || ''
+          },
+          entrega: {
+            tipo: deliveryType,
+            taxa: deliveryFee
           },
           formaPagamento: paymentMethod,
+          troco: paymentMethod === 'dinheiro' ? customerData.changeFor : null,
           observacoes: customerData.observations || '',
           dataHora: new Date().toISOString()
         };
