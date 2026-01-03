@@ -22,6 +22,7 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
   const [error, setError] = useState<string | null>(null)
   const [paymentStatus, setPaymentStatus] = useState<"pending" | "completed" | "expired">("pending")
   const [paymentId, setPaymentId] = useState<string | number | null>(null)
+  const [checkIntervalId, setCheckIntervalId] = useState<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
     if (isOpen) {
@@ -178,30 +179,87 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
       return
     }
 
-    const checkInterval = setInterval(async () => {
-      if (paymentStatus === "completed" || paymentStatus === "expired") {
-        clearInterval(checkInterval)
-        return
-      }
+    // Limpar intervalo anterior se existir
+    if (checkIntervalId) {
+      clearInterval(checkIntervalId)
+    }
 
+    console.log(`🔍 Iniciando verificação de pagamento para ${id}...`)
+
+    // Fazer uma verificação imediata quando o usuário clica no botão
+    const checkNow = async () => {
       try {
-  const status = await checkPaymentStatus(String(id))
-        console.log('Status do pagamento:', status)
+        console.log(`🔄 Verificando pagamento ${id}...`)
+        const status = await checkPaymentStatus(String(id))
+        console.log(`📊 Status retornado: ${status}`)
 
         if (status === "approved" || status === 'paid' || status === 'success') {
+          console.log('✅ PAGAMENTO CONFIRMADO!')
           setPaymentStatus("completed")
-          try { onPaymentConfirmed && onPaymentConfirmed() } catch(e){}
+          
+          // Enviar dados para webhook quando pagamento for confirmado
+          if (orderData) {
+            try {
+              console.log('📤 Enviando pedido para webhook após confirmação de pagamento...')
+              await fetch('https://n8neditor.aezap.site/webhook/impressao', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  pedidoId: `PEDIDO-${Date.now()}`,
+                  items: orderData.items || [],
+                  subtotal: orderData.totals?.subtotal || 0,
+                  taxaEntrega: orderData.totals?.deliveryFee || 0,
+                  total: orderData.totals?.total || 0,
+                  cliente: orderData.customer || {},
+                  entrega: orderData.delivery || {},
+                  formaPagamento: 'PIX',
+                  observacoes: orderData.observations || '',
+                  dataHora: new Date().toISOString()
+                })
+              })
+              console.log('✅ Pedido enviado para webhook')
+            } catch (err) {
+              console.error('❌ Erro ao enviar pedido para webhook:', err)
+            }
+          }
+          
+          // Chamar callback
+          try { 
+            onPaymentConfirmed && onPaymentConfirmed() 
+          } catch(e){
+            console.error('Erro ao chamar onPaymentConfirmed:', e)
+          }
+          
+          // Fechar modal após 2 segundos
           setTimeout(() => onClose(), 2000)
+          if (checkIntervalId) clearInterval(checkIntervalId)
+          setCheckIntervalId(null)
         } else if (status === 'rejected' || status === 'cancelled') {
+          console.error('❌ Pagamento rejeitado ou cancelado')
           setError('Pagamento rejeitado ou cancelado')
-          clearInterval(checkInterval)
+          if (checkIntervalId) clearInterval(checkIntervalId)
+          setCheckIntervalId(null)
+        } else {
+          console.log(`⏳ Status pendente: ${status}`)
         }
       } catch (error) {
-        console.warn('Erro ao verificar pagamento:', error)
+        console.warn('⚠️ Erro ao verificar pagamento:', error)
       }
-    }, 5000)
+    }
 
-    return () => clearInterval(checkInterval)
+    // Fazer verificação imediata
+    checkNow()
+
+    // Depois, fazer polling a cada 3 segundos
+    const newInterval = setInterval(async () => {
+      if (paymentStatus === "completed" || paymentStatus === "expired") {
+        clearInterval(newInterval)
+        return
+      }
+      checkNow()
+    }, 3000)
+
+    setCheckIntervalId(newInterval)
   }
 
   const copyPixCode = async () => {
@@ -311,7 +369,12 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
               ) : (
                 <div className="flex gap-4 w-full">
                   <Button 
-                    onClick={generatePixPayment}
+                    onClick={() => {
+                      // Forçar verificação imediata
+                      if (paymentId) {
+                        startPaymentCheck(paymentId)
+                      }
+                    }}
                     className="flex-1 bg-orange-500 hover:bg-orange-600"
                   >
                     Atualizar Status
@@ -329,9 +392,6 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
           )}
         </div>
       </DialogContent>
-      <div className="px-6 pb-6">
-        <DevelopedBy />
-      </div>
     </Dialog>
   )
 }
