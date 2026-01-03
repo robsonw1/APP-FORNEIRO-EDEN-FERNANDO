@@ -527,22 +527,15 @@ const ComboCustomizationModal = ({ isOpen, onClose, combo, onAddToCart }: ComboC
 
         <Separator />
 
-  {/* Borda (Opcional) */}
-  <div ref={bordaRef} className="space-y-4">
-          <h3 className="text-lg font-semibold">Borda (Opcional)</h3>
-          <RadioGroup value={borda} onValueChange={setBorda}>
-            {bordaOptions.map((option) => (
-              <div key={option.id} className="flex items-center space-x-2 p-3 border rounded-lg">
-                <RadioGroupItem value={option.id} id={`borda-${option.id}`} />
-                <Label htmlFor={`borda-${option.id}`} className="flex-1 cursor-pointer">
-                  <div className="flex justify-between items-center">
-                    <div className="font-medium">{option.name}</div>
-                    <div className="font-bold text-brand-red">{option.id === 'borda-requeijao' ? 'Grátis' : (option.price === 0 ? 'Grátis' : `+ R$ ${option.price.toFixed(2).replace('.', ',')}`)}</div>
-                  </div>
-                </Label>
-              </div>
-            ))}
-          </RadioGroup>
+        {/* Borda (Fixa - Requeijão Grátis) */}
+        <div className="space-y-4">
+          <div className="flex items-center space-x-2 p-4 border rounded-lg bg-brand-red/5">
+            <div className="flex-1">
+              <h3 className="text-lg font-semibold">Borda Requeijão</h3>
+              <p className="text-sm text-muted-foreground">Incluído no combo (Grátis)</p>
+            </div>
+            <div className="font-bold text-brand-red text-lg">Grátis</div>
+          </div>
         </div>
 
         <Separator />
