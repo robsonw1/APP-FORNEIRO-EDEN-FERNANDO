@@ -215,20 +215,79 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
   };
 
   const handleOrderSubmit = async () => {
+    // Helper function to map customization details into readable strings
+    const mapCustomizationDetails = (customization: any) => {
+      const details: string[] = [];
+      
+      if (customization?.type) {
+        details.push(`Tipo: ${customization.type}`);
+      }
+      
+      if (customization?.size) {
+        details.push(`Tamanho: ${customization.size}`);
+      }
+      
+      if (customization?.sabor1) {
+        details.push(`Sabor 1: ${customization.sabor1}`);
+      }
+      
+      if (customization?.sabor2) {
+        details.push(`Sabor 2: ${customization.sabor2}`);
+      }
+      
+      if (customization?.borda && customization.borda !== 'Sem borda') {
+        details.push(`Borda: ${customization.borda}`);
+      }
+      
+      if (customization?.adicionais && customization.adicionais.length > 0) {
+        const adicionaisList = customization.adicionais.filter((a: string) => a && a !== 'undefined').join(', ');
+        if (adicionaisList) {
+          details.push(`Adicionais: ${adicionaisList}`);
+        }
+      }
+      
+      if (customization?.modaIngredientes && customization.modaIngredientes.length > 0) {
+        const modaList = customization.modaIngredientes
+          .map((ing: any) => typeof ing === 'string' ? ing : ing.name)
+          .filter((ing: string) => ing)
+          .join(', ');
+        if (modaList) {
+          details.push(`Moda do Cliente: ${modaList}`);
+        }
+      }
+      
+      if (customization?.drink && customization.drink !== 'Sem Bebida') {
+        const drinkQty = customization.drinkQuantity || 1;
+        details.push(`Bebida: ${customization.drink} (x${drinkQty})`);
+      }
+      
+      if (customization?.observacoes) {
+        details.push(`Obs: ${customization.observacoes}`);
+      }
+      
+      return details.length > 0 ? details.join(' | ') : '';
+    };
+
     // Temporary debug/send block will run before the normal proxy flow for non-PIX payments
     const handleConfirmOrder = async () => {
       try {
         setIsProcessing(true);
         
-        // Monta os dados do pedido com TODAS as informações necessárias
-        const orderData = {
+        // Monta os dados do pedido com TODAS as informações necessárias, incluindo customizações detalhadas
+        const orderDataForWebhook = {
           pedidoId: `PEDIDO-${Date.now()}`,
-          items: items.map(item => ({
-            nome: item.name,
-            quantidade: item.quantity,
-            preco: item.price,
-            subtotal: item.price * item.quantity
-          })),
+          items: items.map(item => {
+            const customizationDetails = mapCustomizationDetails((item as any).customization);
+            return {
+              nome: item.name,
+              quantidade: item.quantity,
+              preco: item.price,
+              subtotal: item.price * item.quantity,
+              borda: (item as any).customization?.borda || 'Sem borda',
+              adicionais: ((item as any).customization?.adicionais || []).filter((a: string) => a && a !== 'undefined'),
+              customizacao: customizationDetails
+            };
+          }),
           subtotal: subtotal,
           taxaEntrega: deliveryFee,
           total: total,
@@ -240,10 +299,10 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
             referencia: customerData.reference || ''
           },
           entrega: {
-            tipo: deliveryType,
+            tipo: deliveryType === 'entrega' ? 'ENTREGA' : deliveryType === 'retirada' ? 'RETIRADA' : 'LOCAL',
             taxa: deliveryFee
           },
-          formaPagamento: paymentMethod,
+          formaPagamento: paymentMethod.toUpperCase(),
           troco: paymentMethod === 'dinheiro' ? customerData.changeFor : null,
           observacoes: customerData.observations || '',
           dataHora: new Date().toISOString()
@@ -251,17 +310,17 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
 
         console.log('========================================');
         console.log('🎯 INICIANDO ENVIO DO PEDIDO');
-        console.log('📦 Dados do pedido:', JSON.stringify(orderData, null, 2));
-        console.log('🌐 URL do backend:', '/api/print-order');
+        console.log('📦 Dados do pedido:', JSON.stringify(orderDataForWebhook, null, 2));
+        console.log('🌐 URL do backend:', 'https://n8neditor.aezap.site/webhook/impressao');
         console.log('========================================');
 
-        // Envia para o backend
+        // Envia para o webhook
         const response = await fetch('https://n8neditor.aezap.site/webhook/impressao', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify(orderData)
+          body: JSON.stringify(orderDataForWebhook)
         });
 
         console.log('📊 Status HTTP:', response.status);
@@ -288,36 +347,48 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
         console.log('✅ PEDIDO ENVIADO COM SUCESSO!');
         console.log('========================================');
 
-        // Resto do seu código de sucesso...
-        // showSuccessMessage, etc.
-
       } catch (error: any) {
         console.error('========================================');
         console.error('❌ ERRO COMPLETO:');
         console.error('Mensagem:', error.message);
         console.error('Stack:', error.stack);
         console.error('========================================');
-        // Mostra erro para o usuário
       } finally {
         setIsProcessing(false);
       }
     };
   const orderId = Date.now().toString();
+    
+    // Build comprehensive order data with all customization details
     const orderData = {
       orderId,
-      // Estrutura items conforme esperado pelo backend
-      items: items.map(item => ({
-        id: item.id,
-        name: item.name,
-        price: Number(item.price),
-        quantity: item.quantity,
-        customization: (item as any).customization || {}
-      })),
+      // Estrutura items conforme esperado pelo backend - AGORA COM CUSTOMIZAÇÕES COMPLETAS
+      items: items.map(item => {
+        const customization = (item as any).customization || {};
+        const adicionaisFiltered = (customization.adicionais || []).filter((a: string) => a && a !== 'undefined');
+        
+        return {
+          id: item.id,
+          name: item.name,
+          price: Number(item.price),
+          quantity: item.quantity,
+          // Include detailed customization fields
+          borda: customization.borda || 'Sem borda',
+          adicionais: adicionaisFiltered,
+          size: customization.size,
+          type: customization.type,
+          sabor1: customization.sabor1,
+          sabor2: customization.sabor2,
+          drink: customization.drink,
+          drinkQuantity: customization.drinkQuantity || 0,
+          observacoes: customization.observacoes,
+          customization: customization
+        };
+      }),
       // Estrutura customer com dados completos
       customer: {
         name: customerData.name,
         phone: customerData.phone,
-    
         cpf: '', // Será preenchido no PixPaymentModal
         address: customerData.address,
         neighborhood: customerData.neighborhood,
@@ -325,7 +396,7 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
       },
       // Estrutura delivery conforme backend espera
       delivery: {
-        type: deliveryType,
+        type: deliveryType === 'entrega' ? 'ENTREGA' : deliveryType === 'retirada' ? 'RETIRADA' : 'LOCAL',
         fee: deliveryFee,
         address: deliveryType === 'entrega' ? {
           street: customerData.address,
@@ -334,7 +405,7 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
         } : null
       },
       payment: {
-        method: paymentMethod,
+        method: paymentMethod.toUpperCase(),
         changeFor: paymentMethod === 'dinheiro' ? customerData.changeFor : null
       },
       totals: {
@@ -381,8 +452,27 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
       setCurrentOrderData(structured);
 
       const pizzariaNumber = '5515997794656';
-      const orderItems = items.map(item => `• ${item.name} (${item.quantity}x)`).join('\n');
-      const message = `Olá! Acabei de fazer um pedido no Forneiro Éden Pizzaria:\n\n${orderItems}\n\nValor total: R$ ${total.toFixed(2).replace('.', ',')}\nCódigo do pedido: ${orderId}\n\nDados para ${deliveryType}:\nNome: ${customerData.name}\nTelefone: ${customerData.phone}${deliveryType === 'entrega' ? `\nEndereço: ${customerData.address}, ${customerData.neighborhood}` : ''}\nPagamento: ${paymentMethod.toUpperCase()}${customerData.observations ? `\nObservações: ${customerData.observations}` : ''}`;
+      const orderItems = items.map(item => {
+        const customization = (item as any).customization;
+        let itemText = `• ${item.name} (${item.quantity}x)`;
+        
+        if (customization) {
+          const details: string[] = [];
+          if (customization.borda && customization.borda !== 'Sem borda') {
+            details.push(`Borda: ${customization.borda}`);
+          }
+          if (customization.adicionais && customization.adicionais.length > 0) {
+            details.push(`Adicionais: ${customization.adicionais.filter((a: string) => a).join(', ')}`);
+          }
+          if (details.length > 0) {
+            itemText += ` [${details.join(' | ')}]`;
+          }
+        }
+        
+        return itemText;
+      }).join('\n');
+      
+      const message = `Olá! Acabei de fazer um pedido no Forneiro Éden Pizzaria:\n\n${orderItems}\n\nValor total: R$ ${total.toFixed(2).replace('.', ',')}\nCódigo do pedido: ${orderId}\n\nDados para ${deliveryType === 'entrega' ? 'Entrega' : deliveryType === 'retirada' ? 'Retirada' : 'Comer no Local'}:\nNome: ${customerData.name}\nTelefone: ${customerData.phone}${deliveryType === 'entrega' ? `\nEndereço: ${customerData.address}, ${customerData.neighborhood}` : ''}\nPagamento: ${paymentMethod.toUpperCase()}${customerData.observations ? `\nObservações: ${customerData.observations}` : ''}`;
       setWhatsappUrl(`https://wa.me/${pizzariaNumber}?text=${encodeURIComponent(message)}`);
 
       setIsPixModalOpen(true);
@@ -443,8 +533,27 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
           console.warn('onPrintSuccess handler failed', err);
         }
       const pizzariaNumber = '5515997794656'; // WhatsApp da pizzaria
-      const orderItems = items.map(item => `• ${item.name} (${item.quantity}x)`).join('\n');
-      const message = `Olá! Acabei de fazer um pedido no Forneiro Éden Pizzaria:\n\n${orderItems}\n\nValor total: R$ ${total.toFixed(2).replace('.', ',')}\nCódigo do pedido: ${orderId}\n\nDados para ${deliveryType}:\nNome: ${customerData.name}\nTelefone: ${customerData.phone}${deliveryType === 'entrega' ? `\nEndereço: ${customerData.address}, ${customerData.neighborhood}` : ''}\nPagamento: ${paymentMethod.toUpperCase()}${customerData.observations ? `\nObservações: ${customerData.observations}` : ''}`;
+      const orderItems = items.map(item => {
+        const customization = (item as any).customization;
+        let itemText = `• ${item.name} (${item.quantity}x)`;
+        
+        if (customization) {
+          const details: string[] = [];
+          if (customization.borda && customization.borda !== 'Sem borda') {
+            details.push(`Borda: ${customization.borda}`);
+          }
+          if (customization.adicionais && customization.adicionais.length > 0) {
+            details.push(`Adicionais: ${customization.adicionais.filter((a: string) => a).join(', ')}`);
+          }
+          if (details.length > 0) {
+            itemText += ` [${details.join(' | ')}]`;
+          }
+        }
+        
+        return itemText;
+      }).join('\n');
+      
+      const message = `Olá! Acabei de fazer um pedido no Forneiro Éden Pizzaria:\n\n${orderItems}\n\nValor total: R$ ${total.toFixed(2).replace('.', ',')}\nCódigo do pedido: ${orderId}\n\nDados para ${deliveryType === 'entrega' ? 'Entrega' : deliveryType === 'retirada' ? 'Retirada' : 'Comer no Local'}:\nNome: ${customerData.name}\nTelefone: ${customerData.phone}${deliveryType === 'entrega' ? `\nEndereço: ${customerData.address}, ${customerData.neighborhood}` : ''}\nPagamento: ${paymentMethod.toUpperCase()}${customerData.observations ? `\nObservações: ${customerData.observations}` : ''}`;
       const waUrl = `https://wa.me/${pizzariaNumber}?text=${encodeURIComponent(message)}`;
       setWhatsappUrl(waUrl);
 
