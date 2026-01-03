@@ -563,7 +563,7 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
       setStep(3);
       setTimeout(() => {
         setIsLoadingConfirmation(false);
-      }, 5000);
+      }, 3000);
 
       // NOTE: onOrderComplete() and onClose() will be called only after user confirms (Ok) or optionally
       // after they press the WhatsApp button (handled by the UI below). This keeps UX in-app and non-forced.
