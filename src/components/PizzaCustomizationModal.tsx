@@ -178,6 +178,9 @@ const PizzaCustomizationModal = ({ isOpen, onClose, pizza, onAddToCart, preSelec
     return () => { el.removeEventListener('scroll', onScroll); clearTimeout(autoHide); clearTimeout(hideTimeout);} ;
   }, [isOpen]);
 
+  // Determine if this is a fixed flavor (selected from menu item, not from a combo)
+  const isFixedFlavor = preSelectedPizza && !allowedPizzaCategories?.includes('pizzas-promocionais');
+
   // Effect para pré-selecionar pizza quando abrir o modal
   React.useEffect(() => {
     if (!isOpen) return;
@@ -556,44 +559,69 @@ const PizzaCustomizationModal = ({ isOpen, onClose, pizza, onAddToCart, preSelec
         ) : (
           pizzaType === 'inteira' ? (
             <div className="mt-2">
-              <Label className="text-sm font-medium">Escolha o Sabor</Label>
-              <div className="mt-2">
-                <Select value={sabor1} onValueChange={(v) => { setSabor1(v); }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o sabor da pizza" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {pizzaOptions.map(p => (
-                      <SelectItem key={p.id} value={p.id}>
-                        <div className="flex justify-between items-center w-full">
-                          <span>{p.name}</span>
-                          <span className="ml-2 text-brand-red">R$ {p.price.grande.toFixed(2).replace('.', ',')}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {isFixedFlavor ? (
+                <div>
+                  <Label className="text-sm font-medium">Sabor (Fixo)</Label>
+                  <div className="mt-2 p-4 border rounded-lg bg-brand-red/5">
+                    <div className="font-medium text-lg">{pizzaOptions.find(p => p.id === sabor1)?.name}</div>
+                    <p className="text-sm text-muted-foreground mt-1">Este sabor foi selecionado do menu</p>
+                    <div className="text-sm text-brand-red mt-2">R$ {pizzaOptions.find(p => p.id === sabor1)?.price.grande.toFixed(2).replace('.', ',')}</div>
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <Label className="text-sm font-medium">Escolha o Sabor</Label>
+                  <div className="mt-2">
+                    <Select value={sabor1} onValueChange={(v) => { setSabor1(v); }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o sabor da pizza" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {pizzaOptions.map(p => (
+                          <SelectItem key={p.id} value={p.id}>
+                            <div className="flex justify-between items-center w-full">
+                              <span>{p.name}</span>
+                              <span className="ml-2 text-brand-red">R$ {p.price.grande.toFixed(2).replace('.', ',')}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div ref={sabor2Ref} className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <Label className="text-sm font-medium">Sabor 1</Label>
-                <Select value={sabor1} onValueChange={(v) => { setSabor1(v); }}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o primeiro sabor" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {pizzaOptions.map((pizza) => (
-                      <SelectItem key={pizza.id} value={pizza.id}>
-                        <div className="flex justify-between items-center w-full">
-                          <span>{pizza.name}</span>
-                          <span className="ml-2 text-brand-red">R$ {pizza.price.grande.toFixed(2).replace('.', ',')}</span>
-                        </div>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                {isFixedFlavor ? (
+                  <div>
+                    <Label className="text-sm font-medium">Sabor 1 (Fixo)</Label>
+                    <div className="mt-2 p-3 border rounded-lg bg-brand-red/5">
+                      <div className="font-medium">{pizzaOptions.find(p => p.id === sabor1)?.name}</div>
+                      <p className="text-xs text-muted-foreground mt-1">Do menu</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div>
+                    <Label className="text-sm font-medium">Sabor 1</Label>
+                    <Select value={sabor1} onValueChange={(v) => { setSabor1(v); }}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Selecione o primeiro sabor" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {pizzaOptions.map((pizza) => (
+                          <SelectItem key={pizza.id} value={pizza.id}>
+                            <div className="flex justify-between items-center w-full">
+                              <span>{pizza.name}</span>
+                              <span className="ml-2 text-brand-red">R$ {pizza.price.grande.toFixed(2).replace('.', ',')}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
               <div>
                 <Label className="text-sm font-medium">Sabor 2</Label>
