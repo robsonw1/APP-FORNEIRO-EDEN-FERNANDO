@@ -822,7 +822,7 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
   );
 
   const renderStep3 = () => {
-    const eta = deliveryType === 'entrega' ? '40-60 minutos' : '20-40 minutos';
+    const eta = deliveryType === 'entrega' ? '60-70 minutos' : '30-40 minutos';
     
     // Show loading state while processing order
     if (isLoadingConfirmation) {
