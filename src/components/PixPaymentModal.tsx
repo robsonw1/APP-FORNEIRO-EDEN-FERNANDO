@@ -240,15 +240,21 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
             console.error('Erro ao chamar onPaymentConfirmed:', e)
           }
           
+          // Limpar intervalo ANTES de fechar
+          if (checkIntervalId) {
+            clearInterval(checkIntervalId)
+            setCheckIntervalId(null)
+          }
+          
           // Fechar modal após 2 segundos
           setTimeout(() => onClose(), 2000)
-          if (checkIntervalId) clearInterval(checkIntervalId)
-          setCheckIntervalId(null)
         } else if (status === 'rejected' || status === 'cancelled') {
           console.error('❌ Pagamento rejeitado ou cancelado')
           setError('Pagamento rejeitado ou cancelado')
-          if (checkIntervalId) clearInterval(checkIntervalId)
-          setCheckIntervalId(null)
+          if (checkIntervalId) {
+            clearInterval(checkIntervalId)
+            setCheckIntervalId(null)
+          }
         } else {
           console.log(`⏳ Status pendente: ${status}`)
         }
@@ -261,16 +267,19 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
     checkNow()
 
     // Depois, fazer polling a cada 3 segundos
-    const newInterval = setInterval(async () => {
-      if (paymentStatus === "completed" || paymentStatus === "expired") {
-        clearInterval(newInterval)
-        return
-      }
-      checkNow()
-    }, 3000)
+    const newInterval = setInterval(checkNow, 3000)
 
     setCheckIntervalId(newInterval)
   }
+
+  // Limpar intervalo quando o modal fecha
+  useEffect(() => {
+    return () => {
+      if (checkIntervalId) {
+        clearInterval(checkIntervalId)
+      }
+    }
+  }, [])
 
   const copyPixCode = async () => {
     try {
