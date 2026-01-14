@@ -201,23 +201,33 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
           if (orderData) {
             try {
               console.log('📤 Enviando pedido para webhook após confirmação de pagamento...')
-              await fetch('https://n8neditor.aezap.site/webhook/impressao', {
+              
+              // Montar dados no mesmo formato que o CheckoutModal usa
+              const orderDataForWebhook = {
+                orderId: `PEDIDO-${Date.now()}`,
+                items: orderData.items || [],
+                subtotal: orderData.totals?.subtotal || 0,
+                deliveryFee: orderData.totals?.deliveryFee || 0,
+                total: orderData.totals?.total || 0,
+                customer: orderData.customer || {},
+                delivery: orderData.delivery || {},
+                payment: { method: 'PIX' },
+                observations: orderData.observations || '',
+                timestamp: new Date().toISOString()
+              }
+              
+              // Usar o proxy do backend ao invés de ir direto
+              const proxyResp = await fetch('/api/print-order', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  pedidoId: `PEDIDO-${Date.now()}`,
-                  items: orderData.items || [],
-                  subtotal: orderData.totals?.subtotal || 0,
-                  taxaEntrega: orderData.totals?.deliveryFee || 0,
-                  total: orderData.totals?.total || 0,
-                  cliente: orderData.customer || {},
-                  entrega: orderData.delivery || {},
-                  formaPagamento: 'PIX',
-                  observacoes: orderData.observations || '',
-                  dataHora: new Date().toISOString()
-                })
+                body: JSON.stringify(orderDataForWebhook)
               })
-              console.log('✅ Pedido enviado para webhook')
+
+              if (!proxyResp.ok) {
+                console.error('❌ Print proxy retornou erro:', proxyResp.status)
+              } else {
+                console.log('✅ Pedido enviado para webhook via proxy')
+              }
             } catch (err) {
               console.error('❌ Erro ao enviar pedido para webhook:', err)
             }
