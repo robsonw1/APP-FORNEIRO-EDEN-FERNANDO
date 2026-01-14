@@ -1,5 +1,6 @@
 import { Dialog, DialogContent, DialogTitle } from "./ui/dialog"
 import { useEffect, useState } from "react"
+import { toast } from '@/hooks/use-toast'
 import { copyText } from '@/lib/clipboard'
 import { Button } from "./ui/button"
 import { generatePix, checkPaymentStatus, GeneratePixResult } from '@/api/mercadopago'
@@ -216,17 +217,33 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
                 timestamp: new Date().toISOString()
               }
               
-              // Usar o proxy do backend ao invés de ir direto
-              const proxyResp = await fetch('/api/print-order', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(orderDataForWebhook)
-              })
-
-              if (!proxyResp.ok) {
-                console.error('❌ Print proxy retornou erro:', proxyResp.status)
+              // Tentar enviar direto para o webhook configurado no frontend
+              // @ts-ignore
+              const webhookUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_PRINT_WEBHOOK_URL) ? String(import.meta.env.VITE_PRINT_WEBHOOK_URL) : '';
+              if (!webhookUrl || webhookUrl === '/api/print-order') {
+                toast({ title: 'Ative o webhook', description: 'PRINT_WEBHOOK_URL não está configurado. Ative-o para enviar pedidos.', variant: 'destructive' });
               } else {
-                console.log('✅ Pedido enviado para webhook via proxy')
+                try {
+                  const controller = new AbortController();
+                  const to = setTimeout(() => controller.abort(), 8000);
+                  const resp = await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(orderDataForWebhook),
+                    signal: controller.signal
+                  });
+                  clearTimeout(to);
+                  if (!resp.ok) {
+                    const txt = await resp.text().catch(() => '');
+                    console.error('❌ Webhook directo retornou erro:', resp.status, txt);
+                    toast({ title: 'Falha no webhook', description: 'O webhook respondeu com erro ao enviar o pedido.', variant: 'destructive' });
+                  } else {
+                    console.log('✅ Pedido enviado para webhook diretamente')
+                  }
+                } catch (err) {
+                  console.error('❌ Erro ao enviar pedido para webhook:', err);
+                  toast({ title: 'Falha no webhook', description: 'Não foi possível contatar o webhook. Verifique a configuração.', variant: 'destructive' });
+                }
               }
             } catch (err) {
               console.error('❌ Erro ao enviar pedido para webhook:', err)
