@@ -93,16 +93,20 @@ export async function checkPaymentStatus(paymentId: string) {
   try {
     await loadRuntimeConfig();
     const apiBase = getApiBase();
+    console.log(`🔍 checkPaymentStatus: chamando ${apiBase}/api/check-payment/${paymentId}`);
+    
     const res = await fetch(`${apiBase}/api/check-payment/${encodeURIComponent(paymentId)}`);
     if (!res.ok) {
       const txt = await res.text();
-      console.error('checkPaymentStatus error', res.status, txt);
+      console.error('❌ checkPaymentStatus error', res.status, txt);
       throw new Error(`Erro ao verificar status: ${res.status}`);
     }
     const data = await res.json();
+    console.log('✅ checkPaymentStatus resposta completa:', data);
+    console.log('📊 Status extraído:', data.status);
     return data.status;
   } catch (err) {
-    console.error('Erro ao verificar pagamento (client proxy):', err);
+    console.error('❌ Erro ao verificar pagamento (client proxy):', err);
     throw err;
   }
 }
