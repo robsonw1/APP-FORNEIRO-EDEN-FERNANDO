@@ -217,33 +217,32 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
                 timestamp: new Date().toISOString()
               }
               
-              // Tentar enviar direto para o webhook configurado no frontend
-              // @ts-ignore
-              const webhookUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_PRINT_WEBHOOK_URL) ? String(import.meta.env.VITE_PRINT_WEBHOOK_URL) : '';
-              if (!webhookUrl || webhookUrl === '/api/print-order') {
-                toast({ title: 'Ative o webhook', description: 'PRINT_WEBHOOK_URL não está configurado. Ative-o para enviar pedidos.', variant: 'destructive' });
-              } else {
-                try {
-                  const controller = new AbortController();
-                  const to = setTimeout(() => controller.abort(), 8000);
-                  const resp = await fetch(webhookUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(orderDataForWebhook),
-                    signal: controller.signal
-                  });
-                  clearTimeout(to);
-                  if (!resp.ok) {
-                    const txt = await resp.text().catch(() => '');
-                    console.error('❌ Webhook directo retornou erro:', resp.status, txt);
-                    toast({ title: 'Falha no webhook', description: 'O webhook respondeu com erro ao enviar o pedido.', variant: 'destructive' });
+              // Enviar via proxy do servidor para o webhook configurado (mais seguro e confiável)
+              try {
+                const controller = new AbortController();
+                const to = setTimeout(() => controller.abort(), 8000);
+                const resp = await fetch('/api/print-order', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(orderDataForWebhook),
+                  signal: controller.signal
+                });
+                clearTimeout(to);
+                if (!resp.ok) {
+                  let body = null;
+                  try { body = await resp.json(); } catch(e) { body = await resp.text().catch(()=>null); }
+                  const msg = body && (body.error || body.detail) ? String(body.error || body.detail) : `status ${resp.status}`;
+                  if (resp.status === 400 && String(msg).toLowerCase().includes('print_webhook_url')) {
+                    toast({ title: 'Ative o webhook', description: 'PRINT_WEBHOOK_URL não está configurado no servidor. Ative-o.', variant: 'destructive' });
                   } else {
-                    console.log('✅ Pedido enviado para webhook diretamente')
+                    toast({ title: 'Falha no webhook', description: `Erro ao encaminhar pedido (${msg}).`, variant: 'destructive' });
                   }
-                } catch (err) {
-                  console.error('❌ Erro ao enviar pedido para webhook:', err);
-                  toast({ title: 'Falha no webhook', description: 'Não foi possível contatar o webhook. Verifique a configuração.', variant: 'destructive' });
+                } else {
+                  console.log('✅ Pedido enviado para webhook via proxy')
                 }
+              } catch (err) {
+                console.error('❌ Erro ao enviar pedido para webhook via proxy:', err);
+                toast({ title: 'Falha no webhook', description: 'Não foi possível contatar o servidor de proxy. Verifique a conexão.', variant: 'destructive' });
               }
             } catch (err) {
               console.error('❌ Erro ao enviar pedido para webhook:', err)
