@@ -311,11 +311,11 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
         console.log('========================================');
         console.log('🎯 INICIANDO ENVIO DO PEDIDO');
         console.log('📦 Dados do pedido:', JSON.stringify(orderDataForWebhook, null, 2));
-        console.log('🌐 URL do backend:', 'https://n8neditor.aezap.site/webhook/impressao');
+        console.log('🌐 URL do backend:', '/api/print-order');
         console.log('========================================');
 
-        // Envia para o webhook
-        const response = await fetch('https://n8neditor.aezap.site/webhook/impressao', {
+        // Envia para o proxy do backend (não direto para o webhook)
+        const response = await fetch('/api/print-order', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -822,7 +822,7 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
   );
 
   const renderStep3 = () => {
-    const eta = deliveryType === 'entrega' ? '60-70 minutos' : '30-40 minutos';
+    const eta = deliveryType === 'entrega' ? '40-60 minutos' : '20-40 minutos';
     
     // Show loading state while processing order
     if (isLoadingConfirmation) {
