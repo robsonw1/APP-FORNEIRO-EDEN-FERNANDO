@@ -108,33 +108,18 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
   const total = subtotal + deliveryFee;
   const { products: storeProducts } = useProducts();
 
-  // Helper to send payload directly to configured webhook (frontend env VITE_PRINT_WEBHOOK_URL)
-  const sendToWebhook = async (payload: any) => {
-    // @ts-ignore
-    const webhookUrl = (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_PRINT_WEBHOOK_URL) ? String(import.meta.env.VITE_PRINT_WEBHOOK_URL) : '';
-    if (!webhookUrl || webhookUrl === '/api/print-order') {
-      const err: any = new Error('WEBHOOK_NOT_CONFIGURED');
-      err.code = 'WEBHOOK_NOT_CONFIGURED';
-      throw err;
-    }
-
+  // Use server proxy `/api/print-order` to forward to configured print webhook.
+  const sendToProxy = async (payload: any) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
     try {
-      const resp = await fetch(webhookUrl, {
+      const resp = await fetch('/api/print-order', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        signal: controller.signal,
+        signal: controller.signal
       });
       clearTimeout(timeout);
-      if (!resp.ok) {
-        const txt = await resp.text().catch(() => '');
-        const e: any = new Error(`WEBHOOK_RESPONSE_${resp.status}`);
-        e.status = resp.status;
-        e.body = txt;
-        throw e;
-      }
       return resp;
     } catch (err: any) {
       clearTimeout(timeout);
@@ -348,18 +333,24 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
         console.log('🌐 URL do backend:', '/api/print-order');
         console.log('========================================');
 
-        // Tenta enviar DIRETO para o webhook configurado (VITE_PRINT_WEBHOOK_URL)
+        // Envia ao proxy do servidor (/api/print-order) que encaminha para PRINT_WEBHOOK_URL
         try {
-          await sendToWebhook(orderDataForWebhook);
-          console.log('✅ PEDIDO ENVIADO DIRECTAMENTE PARA O WEBHOOK!');
-        } catch (e: any) {
-          if (e && e.code === 'WEBHOOK_NOT_CONFIGURED') {
-            toast({ title: 'Ative o webhook', description: 'PRINT_WEBHOOK_URL não está configurado. Ative-o para enviar pedidos.', variant: 'destructive' });
-          } else {
-            console.error('Erro ao enviar para webhook direto:', e);
-            toast({ title: 'Falha no webhook', description: 'Não foi possível enviar o pedido ao webhook. Verifique a configuração.', variant: 'destructive' });
+          const proxyResp = await sendToProxy(orderDataForWebhook);
+          if (!proxyResp.ok) {
+            let body = null;
+            try { body = await proxyResp.json(); } catch(e) { body = await proxyResp.text().catch(()=>null); }
+            // server returns 400 with { error: 'PRINT_WEBHOOK_URL not configured on server' }
+            const msg = body && (body.error || body.detail) ? String(body.error || body.detail) : `status ${proxyResp.status}`;
+            if (proxyResp.status === 400 && String(msg).toLowerCase().includes('print_webhook_url')) {
+              toast({ title: 'Ative o webhook', description: 'PRINT_WEBHOOK_URL não está configurado. Ative-o para enviar pedidos.', variant: 'destructive' });
+            } else {
+              toast({ title: 'Falha no envio', description: `Não foi possível encaminhar o pedido (${msg}).`, variant: 'destructive' });
+            }
+            throw new Error('PROXY_ERROR');
           }
-          throw e; // rethrow para que o fluxo superior saiba que falhou
+        } catch (e: any) {
+          console.error('Erro ao enviar para proxy de impressão:', e);
+          throw e;
         }
 
       } catch (error: any) {
@@ -504,15 +495,21 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
       // This avoids CORS issues because the browser posts to the same origin (/api/print-order)
       // and the server forwards the body to PRINT_WEBHOOK_URL.
       try {
-        // Envia DIRETO para o webhook configurado (VITE_PRINT_WEBHOOK_URL)
-        await sendToWebhook(orderData);
-      } catch (e: any) {
-        if (e && e.code === 'WEBHOOK_NOT_CONFIGURED') {
-          toast({ title: 'Ative o webhook', description: 'PRINT_WEBHOOK_URL não está configurado. Ative-o para enviar pedidos.', variant: 'destructive' });
-        } else {
-          console.error('Erro ao enviar pedido ao webhook direto:', e);
-          toast({ title: 'Erro ao enviar pedido', description: 'Não foi possível enviar o pedido ao webhook. Tente novamente.', variant: 'destructive' });
+        const proxyResp = await sendToProxy(orderData);
+        if (!proxyResp.ok) {
+          let body = null;
+          try { body = await proxyResp.json(); } catch(e) { body = await proxyResp.text().catch(()=>null); }
+          const msg = body && (body.error || body.detail) ? String(body.error || body.detail) : `status ${proxyResp.status}`;
+          if (proxyResp.status === 400 && String(msg).toLowerCase().includes('print_webhook_url')) {
+            toast({ title: 'Ative o webhook', description: 'PRINT_WEBHOOK_URL não está configurado. Ative-o para enviar pedidos.', variant: 'destructive' });
+          } else {
+            toast({ title: 'Falha no envio', description: `Não foi possível encaminhar o pedido (${msg}).`, variant: 'destructive' });
+          }
+          return;
         }
+      } catch (e) {
+        console.error('Erro ao chamar proxy de impressão:', e);
+        toast({ title: 'Erro ao enviar pedido', description: 'Tente novamente ou entre em contato conosco.', variant: 'destructive' });
         return;
       }
 
