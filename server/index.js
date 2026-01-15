@@ -890,15 +890,22 @@ app.post('/api/webhook', express.json({ type: '*/*' }), async (req, res) => {
 app.post('/api/print-order', express.json({ type: '*/*' }), async (req, res) => {
   try {
     const printUrl = process.env.PRINT_WEBHOOK_URL;
+    console.log('='.repeat(60));
+    console.log('[PRINT PROXY] /api/print-order called');
+    console.log('[PRINT PROXY] PRINT_WEBHOOK_URL env var:', printUrl ? '✓ SET' : '✗ NOT SET');
+    console.log('[PRINT PROXY] PRINT_WEBHOOK_URL value:', printUrl || 'undefined');
+    console.log('='.repeat(60));
+    
     if (!printUrl) {
-      console.error('/api/print-order called but PRINT_WEBHOOK_URL is not set');
+      console.error('[PRINT PROXY] ❌ PRINT_WEBHOOK_URL is not set - CANNOT FORWARD');
       return res.status(400).json({ error: 'PRINT_WEBHOOK_URL not configured on server' });
     }
 
     // Log incoming request for diagnostics (avoid logging huge payloads)
     try {
       const bodyPreview = JSON.stringify(req.body || {}).slice(0, 2000);
-      console.log(`[PRINT PROXY] Forwarding order to ${printUrl}. bodyPreview=${bodyPreview}`);
+      console.log(`[PRINT PROXY] 📦 Forwarding order to: ${printUrl}`);
+      console.log(`[PRINT PROXY] 📊 Body preview: ${bodyPreview}`);
     } catch (e) {
       console.log('[PRINT PROXY] Forwarding order (could not serialize body preview)');
     }
@@ -907,25 +914,35 @@ app.post('/api/print-order', express.json({ type: '*/*' }), async (req, res) => 
     let pRes;
     let text = '';
     try {
+      console.log(`[PRINT PROXY] 🔄 Sending POST to webhook...`);
+      const startTime = Date.now();
       pRes = await fetch(String(printUrl), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req.body || {})
       });
+      const elapsed = Date.now() - startTime;
       text = await pRes.text().catch(() => '');
+      console.log(`[PRINT PROXY] ✅ Webhook response received in ${elapsed}ms, status=${pRes.status}`);
     } catch (fetchErr) {
-      console.error('[PRINT PROXY] fetch to print webhook failed', fetchErr && fetchErr.stack ? fetchErr.stack : fetchErr);
-      return res.status(500).json({ error: 'Failed to reach print webhook', detail: String(fetchErr) });
+      console.error('[PRINT PROXY] ❌ FETCH FAILED - Error details:');
+      console.error('[PRINT PROXY] Error message:', fetchErr.message);
+      console.error('[PRINT PROXY] Error code:', fetchErr.code);
+      console.error('[PRINT PROXY] Stack:', fetchErr && fetchErr.stack ? fetchErr.stack : 'no stack');
+      return res.status(500).json({ error: 'Failed to reach print webhook', detail: String(fetchErr.message || fetchErr) });
     }
 
     // Log proxied response for diagnostics
-    console.log(`[PRINT PROXY] print webhook responded status=${pRes.status} bodyPreview=${String(text || '').slice(0,2000)}`);
+    console.log(`[PRINT PROXY] 📄 Webhook response status=${pRes.status}`);
+    console.log(`[PRINT PROXY] 📄 Webhook response body: ${String(text || '').slice(0, 500)}`);
 
     if (!pRes.ok) {
+      console.log(`[PRINT PROXY] ⚠️ Webhook returned error status ${pRes.status}`);
       // Respond with upstream status and body for easier debugging
       return res.status(502).json({ error: 'Print webhook error', status: pRes.status, detail: text });
     }
 
+    console.log('[PRINT PROXY] ✅ SUCCESS - Order forwarded to webhook');
     // Return the proxied text (or empty) so client can inspect result if needed
     try {
       const json = JSON.parse(text || 'null');
@@ -934,7 +951,7 @@ app.post('/api/print-order', express.json({ type: '*/*' }), async (req, res) => 
       return res.send(text || 'ok');
     }
   } catch (err) {
-    console.error('Failed to proxy print webhook (unexpected)', err && err.stack ? err.stack : err);
+    console.error('[PRINT PROXY] ❌ Unexpected error:', err && err.stack ? err.stack : err);
     return res.status(500).json({ error: 'Failed to proxy print webhook', detail: String(err) });
   }
 });
