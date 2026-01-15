@@ -299,91 +299,7 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
       return details.length > 0 ? details.join(' | ') : '';
     };
 
-    // Temporary debug/send block will run before the normal proxy flow for non-PIX payments
-    const handleConfirmOrder = async () => {
-      try {
-        setIsProcessing(true);
-        
-        // Monta os dados do pedido com TODAS as informações necessárias, incluindo customizações detalhadas
-        const orderDataForWebhook = {
-          pedidoId: `PEDIDO-${Date.now()}`,
-          items: items.map(item => {
-            const customizationDetails = mapCustomizationDetails((item as any).customization);
-            return {
-              nome: item.name,
-              quantidade: item.quantity,
-              preco: item.price,
-              subtotal: item.price * item.quantity,
-              borda: (item as any).customization?.borda || 'Sem borda',
-              adicionais: ((item as any).customization?.adicionais || []).filter((a: string) => a && a !== 'undefined'),
-              customizacao: customizationDetails
-            };
-          }),
-          subtotal: subtotal,
-          taxaEntrega: deliveryFee,
-          total: total,
-          cliente: {
-            nome: customerData.name || 'Cliente',
-            telefone: customerData.phone || '',
-            endereco: customerData.address || '',
-            bairro: customerData.neighborhood || '',
-            referencia: customerData.reference || ''
-          },
-          entrega: {
-            tipo: deliveryType === 'entrega' ? 'ENTREGA' : deliveryType === 'retirada' ? 'RETIRADA' : 'LOCAL',
-            taxa: deliveryFee
-          },
-          formaPagamento: paymentMethod.toUpperCase(),
-          troco: paymentMethod === 'dinheiro' ? customerData.changeFor : null,
-          observacoes: customerData.observations || '',
-          dataHora: new Date().toISOString()
-        };
-
-        console.log('========================================');
-        console.log('🎯 INICIANDO ENVIO DO PEDIDO');
-        console.log('📦 Dados do pedido:', JSON.stringify(orderDataForWebhook, null, 2));
-        console.log('🌐 URL do backend:', '/api/print-order');
-        console.log('========================================');
-
-        // Envia ao proxy do servidor (/api/print-order) que encaminha para PRINT_WEBHOOK_URL
-        try {
-          const proxyResp = await sendToProxy(orderDataForWebhook);
-          if (!proxyResp.ok) {
-            let body = null;
-            try { body = await proxyResp.json(); } catch(e) { body = await proxyResp.text().catch(()=>null); }
-            // server returns 400 with { error: 'PRINT_WEBHOOK_URL not configured on server' }
-            const msg = body && (body.error || body.detail) ? String(body.error || body.detail) : `status ${proxyResp.status}`;
-            if (proxyResp.status === 400 && String(msg).toLowerCase().includes('print_webhook_url')) {
-              toast({ title: 'Ative o webhook', description: 'PRINT_WEBHOOK_URL não está configurado. Ative-o para enviar pedidos.', variant: 'destructive' });
-            } else {
-              toast({ title: 'Falha no envio', description: `Não foi possível encaminhar o pedido (${msg}).`, variant: 'destructive' });
-            }
-            throw new Error('PROXY_ERROR');
-          } else {
-            // Log proxy success body for debugging (may be empty)
-            try {
-              const txt = await proxyResp.text().catch(() => null);
-              console.log('[PRINT PROXY] Success response:', txt);
-            } catch (e) {
-              console.log('[PRINT PROXY] Success (no body)');
-            }
-          }
-        } catch (e: any) {
-          console.error('Erro ao enviar para proxy de impressão:', e);
-          throw e;
-        }
-
-      } catch (error: any) {
-        console.error('========================================');
-        console.error('❌ ERRO COMPLETO:');
-        console.error('Mensagem:', error.message);
-        console.error('Stack:', error.stack);
-        console.error('========================================');
-      } finally {
-        setIsProcessing(false);
-      }
-    };
-  const orderId = Date.now().toString();
+    const orderId = Date.now().toString();
     
     // Build comprehensive order data with all customization details
     const orderData = {
@@ -506,8 +422,6 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
     }
 
     try {
-      // run temporary debug sender for non-pix payments (will also run for pix but PIX returns earlier above)
-      await handleConfirmOrder();
       // Persist the current order data in state so other flows (webhook, print) can access it
       setCurrentOrderData(orderData);
 
