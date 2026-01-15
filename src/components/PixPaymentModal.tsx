@@ -238,6 +238,13 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
                     toast({ title: 'Falha no webhook', description: `Erro ao encaminhar pedido (${msg}).`, variant: 'destructive' });
                   }
                 } else {
+                  // Log proxy success body for debugging
+                  try {
+                    const txt = await resp.text().catch(() => null);
+                    console.log('[PRINT PROXY] Success response (PIX):', txt);
+                  } catch (e) {
+                    console.log('[PRINT PROXY] Success response (PIX) - no body');
+                  }
                   console.log('✅ Pedido enviado para webhook via proxy')
                 }
               } catch (err) {
