@@ -347,6 +347,14 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
               toast({ title: 'Falha no envio', description: `Não foi possível encaminhar o pedido (${msg}).`, variant: 'destructive' });
             }
             throw new Error('PROXY_ERROR');
+          } else {
+            // Log proxy success body for debugging (may be empty)
+            try {
+              const txt = await proxyResp.text().catch(() => null);
+              console.log('[PRINT PROXY] Success response:', txt);
+            } catch (e) {
+              console.log('[PRINT PROXY] Success (no body)');
+            }
           }
         } catch (e: any) {
           console.error('Erro ao enviar para proxy de impressão:', e);
