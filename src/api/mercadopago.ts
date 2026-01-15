@@ -48,11 +48,18 @@ export async function generatePix(amount: number, orderId: string): Promise<Gene
   try {
     await loadRuntimeConfig();
     const apiBase = getApiBase();
+    
+    // Construct full URL using apiBase
+    let pixUrl = `/api/generate-pix`;
+    if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
+      pixUrl = `${apiBase}/api/generate-pix`;
+    }
+    
     // Use application/x-www-form-urlencoded to avoid CORS preflight in many cases
     const params = new URLSearchParams();
     params.set('amount', String(amount));
     params.set('orderId', String(orderId));
-    const res = await fetch(`${apiBase}/api/generate-pix`, {
+    const res = await fetch(pixUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: params.toString()
@@ -93,9 +100,16 @@ export async function checkPaymentStatus(paymentId: string) {
   try {
     await loadRuntimeConfig();
     const apiBase = getApiBase();
-    console.log(`🔍 checkPaymentStatus: chamando ${apiBase}/api/check-payment/${paymentId}`);
     
-    const res = await fetch(`${apiBase}/api/check-payment/${encodeURIComponent(paymentId)}`);
+    // Construct full URL using apiBase
+    let checkUrl = `/api/check-payment/${encodeURIComponent(paymentId)}`;
+    if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
+      checkUrl = `${apiBase}/api/check-payment/${encodeURIComponent(paymentId)}`;
+    }
+    
+    console.log(`🔍 checkPaymentStatus: chamando ${checkUrl}`);
+    
+    const res = await fetch(checkUrl);
     if (!res.ok) {
       const txt = await res.text();
       console.error('❌ checkPaymentStatus error', res.status, txt);
