@@ -221,7 +221,19 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
               try {
                 const controller = new AbortController();
                 const to = setTimeout(() => controller.abort(), 8000);
-                const resp = await fetch('/api/print-order', {
+                
+                // Determine the correct backend URL
+                let backendUrl = '/api/print-order'; // default for same-origin requests
+                // @ts-ignore
+                const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : '';
+                if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
+                  // Use absolute URL if provided
+                  backendUrl = `${apiBase}/api/print-order`;
+                }
+                
+                console.log('[PRINT PROXY PIX] URL:', backendUrl, 'Payload size:', JSON.stringify(orderDataForWebhook).length);
+                
+                const resp = await fetch(backendUrl, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify(orderDataForWebhook),
