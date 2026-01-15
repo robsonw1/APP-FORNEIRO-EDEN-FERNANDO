@@ -113,7 +113,19 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 8000);
     try {
-      const resp = await fetch('/api/print-order', {
+      // Determine the correct backend URL
+      let backendUrl = '/api/print-order'; // default for same-origin requests
+      
+      // @ts-ignore
+      const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : '';
+      if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
+        // Use absolute URL if provided
+        backendUrl = `${apiBase}/api/print-order`;
+      }
+      
+      console.log('[PRINT PROXY CALL] URL:', backendUrl, 'Payload size:', JSON.stringify(payload).length);
+      
+      const resp = await fetch(backendUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
