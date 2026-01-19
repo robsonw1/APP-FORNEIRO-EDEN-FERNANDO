@@ -346,6 +346,18 @@ const Index = () => {
           setPreSelectedPizzaForHalf(null);
           setIsComboContext(false);
         }}
+        // ✅ NOVO: Passar o clearCart do hook
+        onClearCart={() => {
+          console.log('📋 Limpando carrinho completo...');
+          clearCart();
+          setIsCheckoutOpen(false);
+          setIsCartOpen(false);
+          setSelectedPizza(null);
+          setSelectedCombo(null);
+          setPreSelectedPizzaForCustomization(null);
+          setPreSelectedPizzaForHalf(null);
+          setIsComboContext(false);
+        }}
         onPrintSuccess={() => {
           // Clear cart immediately after successful print webhook
           clearCart();
