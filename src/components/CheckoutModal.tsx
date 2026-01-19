@@ -22,12 +22,14 @@ interface CheckoutModalProps {
   onOrderComplete: () => void;
   // Called when the order was successfully sent to the print webhook
   onPrintSuccess?: () => void;
+  // ✅ NOVO: Callback para limpar o carrinho completamente
+  onClearCart?: () => void;
 }
 
 type DeliveryType = 'entrega' | 'retirada' | 'local';
 type PaymentMethod = 'pix' | 'dinheiro' | 'debito' | 'credito';
 
-const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPrintSuccess }: CheckoutModalProps) => {
+const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPrintSuccess, onClearCart }: CheckoutModalProps) => {
   const [step, setStep] = useState(1);
   const [deliveryType, setDeliveryType] = useState<DeliveryType>('entrega');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
@@ -795,7 +797,12 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
         </Card>
 
         <div className="flex gap-3 justify-center">
-          <Button className="flex-1" variant="outline" onClick={() => { onOrderComplete(); onClose(); }}>
+          <Button className="flex-1" variant="outline" onClick={() => { 
+            // ✅ Limpar carrinho também para cartão/dinheiro
+            if (onClearCart) onClearCart();
+            onOrderComplete(); 
+            onClose(); 
+          }}>
             ✅ Ok
           </Button>
           <Button className="flex-1 bg-gradient-primary" onClick={() => { if (whatsappUrl) window.open(whatsappUrl, '_blank'); }}>
@@ -844,8 +851,14 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
         orderId={currentOrderId || Date.now().toString()}
         orderData={currentOrderData}
         onPaymentConfirmed={() => {
+          console.log('✅ PIX CONFIRMADO - Limpando estado completo...')
           setIsPixModalOpen(false)
           setStep(3)
+          // ✅ NOVO: Limpar carrinho imediatamente após pagamento confirmado
+          if (onClearCart) {
+            console.log('🧹 Limpando carrinho após confirmação de pagamento PIX')
+            onClearCart()
+          }
         }}
       />
     </>
