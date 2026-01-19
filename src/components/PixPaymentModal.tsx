@@ -118,11 +118,15 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
         description: `Pedido #${orderId}`
       }
 
-      console.log('📤 Enviando payload:', payload)
+      console.log('📤 Enviando payload para generatePix:', {
+        amount: payload.amount,
+        orderId: payload.orderId,
+        hasOrderData: !!payload.orderData,
+        orderDataKeys: payload.orderData ? Object.keys(payload.orderData).join(', ') : 'N/A'
+      })
 
-
-  const data = await generatePix(Number(total), orderId) as GeneratePixResult
-      console.log('� Dados recebidos do generatePix proxy:', {
+      const data = await generatePix(Number(total), orderId, orderData) as GeneratePixResult
+      console.log('📦 Dados recebidos do generatePix proxy:', {
         qrCodeBase64: data.qrCodeBase64 ? `Presente (${String(data.qrCodeBase64).length} chars)` : 'Ausente',
         pixCopiaECola: data.pixCopiaECola ? `Presente (${String(data.pixCopiaECola).length} chars)` : 'Ausente',
         paymentId: data.paymentId,
