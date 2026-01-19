@@ -25,9 +25,28 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
   const [paymentId, setPaymentId] = useState<string | number | null>(null)
   const [checkIntervalId, setCheckIntervalId] = useState<NodeJS.Timeout | null>(null)
 
+  // ✅ NOVO: Cleanup ao fechar modal
+  useEffect(() => {
+    return () => {
+      // Limpar intervalo se modal fechar
+      if (checkIntervalId) {
+        clearInterval(checkIntervalId)
+      }
+    }
+  }, [checkIntervalId])
+
   useEffect(() => {
     if (isOpen) {
       console.log('🔍 DEBUG - PixPaymentModal - Props:', { total, orderId, orderData });
+      // ✅ NOVO: Resetar estado quando abre
+      setQRCodeData("")
+      setPixCode("")
+      setTimeLeft(600)
+      setIsLoading(true)
+      setError(null)
+      setPaymentStatus("pending")
+      setPaymentId(null)
+      
       generatePixPayment()
       const timer = startCountdown()
       return () => clearInterval(timer)
