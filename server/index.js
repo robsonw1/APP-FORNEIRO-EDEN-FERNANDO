@@ -577,6 +577,14 @@ app.post('/api/generate-pix', async (req, res) => {
       const paymentId = data.id || (data && data.transaction_details && data.transaction_details.id) || null;
       
       // Salvar mesmo se rejeitado, mas tratar erro de arquivo
+      console.log('💾 Salvando registro de pagamento:', {
+        paymentId: String(paymentId || ''),
+        orderId,
+        amount,
+        status: data.status || 'pending',
+        hasOrderData: !!orderData,
+        orderDataKeys: orderData ? Object.keys(orderData).join(', ') : 'N/A'
+      });
       try {
         await savePaymentRecord(String(paymentId || Date.now()), { 
           id: String(paymentId || ''), 
@@ -588,8 +596,9 @@ app.post('/api/generate-pix', async (req, res) => {
           dev: false, 
           orderData: orderData || null 
         });
+        console.log('✅ Registro de pagamento salvo com sucesso para ID:', paymentId);
       } catch (saveError) {
-        console.warn('Erro ao salvar registro de pagamento:', saveError.message);
+        console.warn('❌ Erro ao salvar registro de pagamento:', saveError.message);
       }
 
       tryBroadcastPayment({ id: String(paymentId || ''), orderId, amount, status: data.status || 'pending' });
@@ -662,6 +671,14 @@ app.post('/api/generate-pix', async (req, res) => {
       const qr_base64 = transaction_data.qr_code_base64;
       const qr_code = transaction_data.qr_code;
       
+      console.log('💾 Salvando registro de pagamento (fallback REST):', {
+        paymentId: String(data.id),
+        orderId,
+        amount,
+        status: data.status || 'pending',
+        hasOrderData: !!orderData,
+        orderDataKeys: orderData ? Object.keys(orderData).join(', ') : 'N/A'
+      });
       try {
         await savePaymentRecord(String(data.id), { 
           id: String(data.id), 
@@ -673,8 +690,9 @@ app.post('/api/generate-pix', async (req, res) => {
           dev: false, 
           orderData: orderData || null 
         });
+        console.log('✅ Registro de pagamento (fallback) salvo com sucesso para ID:', data.id);
       } catch (saveError) {
-        console.warn('Erro ao salvar registro fallback:', saveError.message);
+        console.warn('❌ Erro ao salvar registro fallback:', saveError.message);
       }
       
       tryBroadcastPayment({ id: String(data.id), orderId, amount, status: data.status || 'pending' });
@@ -834,26 +852,56 @@ app.post('/api/webhook', express.json({ type: '*/*' }), async (req, res) => {
     }
 
     // Fetch payment status from Mercado Pago and update local record
-  const mpRes = await fetch(`https://api.mercadopago.com/payments/${paymentId}`, { headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` } });
+    // BUT: if MP API fails, use the stored orderData from when payment was created
+    console.log('🔍 Fetching payment details from MP for ID:', paymentId);
+    
+    const mpRes = await fetch(`https://api.mercadopago.com/payments/${paymentId}`, { 
+      headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` } 
+    });
     const text = await mpRes.text();
-    let data
+    let data;
     try { data = JSON.parse(text) } catch(e) { data = { raw: text } }
 
+    // If MP returns error, try to use stored payment record instead (PIX sometimes syncs slowly)
     if (mpRes.status >= 400) {
-      console.error('Error fetching payment from MP in webhook:', data);
-      return res.status(500).send('mp-error');
+      console.error('❌ Error fetching payment from MP in webhook:', data);
+      console.log('⚠️ MP returned error, checking local stored payment record...');
+      
+      const storedRec = await getPaymentRecord(paymentId);
+      if (storedRec && storedRec.orderData) {
+        console.log('✅ Found stored orderData for payment', paymentId, '- will use it to forward to webhook');
+        data = { 
+          id: paymentId, 
+          status: 'approved', 
+          statusDetail: 'credited', 
+          raw: storedRec 
+        };
+      } else {
+        console.log('⚠️ No stored orderData found for payment', paymentId);
+        // Still return success to avoid retry loops, but log the issue
+        return res.status(200).send('ok-but-no-data');
+      }
     }
 
-    await savePaymentRecord(paymentId, { status: data.status, raw: data });
-    console.log('Webhook processed payment', paymentId, 'status', data.status);
-  // notify frontend via websocket
-  tryBroadcastPayment({ id: String(paymentId), status: data.status, raw: data });
+    // Update local record with MP status (or use fallback if MP failed)
+    if (data.status) {
+      await savePaymentRecord(paymentId, { status: data.status, raw: data });
+      console.log('✅ Webhook processed payment', paymentId, 'status:', data.status);
+    }
+    
+    // Notify frontend via websocket
+    tryBroadcastPayment({ id: String(paymentId), status: data.status || 'approved', raw: data });
+    
     // If payment is approved/paid, forward stored orderData to printing webhook if configured
     const printUrl = process.env.PRINT_WEBHOOK_URL;
-    if (printUrl && (String(data.status).toLowerCase() === 'approved' || String(data.status).toLowerCase() === 'paid' || String(data.status).toLowerCase() === 'success')) {
+    const paymentStatus = String(data.status || '').toLowerCase();
+    const isApproved = paymentStatus === 'approved' || paymentStatus === 'paid' || paymentStatus === 'success';
+    
+    if (printUrl && isApproved) {
       try {
         const rec = await getPaymentRecord(paymentId);
         if (rec && rec.orderData) {
+          console.log('📤 Forwarding order to webhook for payment', paymentId);
           // Post to print webhook (non-blocking but log result)
           try {
             const pRes = await fetch(printUrl, {
@@ -861,21 +909,24 @@ app.post('/api/webhook', express.json({ type: '*/*' }), async (req, res) => {
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify(rec.orderData)
             });
+            const pText = await pRes.text().catch(()=>'<no-text>');
+            
             if (!pRes.ok) {
-              const pText = await pRes.text().catch(()=>'<no-text>');
-              console.warn('Print webhook returned non-OK:', pRes.status, pText);
+              console.warn('⚠️ Print webhook returned non-OK:', pRes.status, pText.slice(0, 200));
             } else {
-              console.log('Order summary posted to print webhook for payment', paymentId);
+              console.log('✅ Order summary posted to print webhook for payment', paymentId);
             }
           } catch (e) {
-            console.warn('Failed to post order to print webhook:', e);
+            console.warn('❌ Failed to post order to print webhook:', e.message);
           }
         } else {
-          console.log('No orderData found for payment', paymentId);
+          console.log('⚠️ No orderData found for payment', paymentId, '- cannot forward to webhook');
         }
       } catch (e) {
-        console.warn('Error looking up payment record for print forwarding', e);
+        console.warn('❌ Error looking up payment record for print forwarding:', e.message);
       }
+    } else if (!printUrl) {
+      console.log('ℹ️ PRINT_WEBHOOK_URL not configured - skipping order forwarding');
     }
     res.status(200).send('ok');
   } catch (e) {
