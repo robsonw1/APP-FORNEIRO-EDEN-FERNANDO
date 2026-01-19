@@ -921,6 +921,13 @@ app.post('/api/webhook', express.json({ type: '*/*' }), async (req, res) => {
     if (printUrl && isApproved) {
       try {
         const rec = await getPaymentRecord(paymentId);
+        
+        // ✅ NOVO: Verificar se este pedido já foi encaminhado (proteção idempotência)
+        if (rec && rec.webhookSent) {
+          console.log('⚠️ Pedido já foi encaminhado para webhook anteriormente:', paymentId);
+          return res.status(200).send('ok-already-sent');
+        }
+        
         if (rec && rec.orderData) {
           console.log('📤 Forwarding order to webhook for payment', paymentId);
           // Post to print webhook (non-blocking but log result)
@@ -935,6 +942,8 @@ app.post('/api/webhook', express.json({ type: '*/*' }), async (req, res) => {
             if (!pRes.ok) {
               console.warn('⚠️ Print webhook returned non-OK:', pRes.status, pText.slice(0, 200));
             } else {
+              // ✅ NOVO: Marcar que o pedido foi enviado com sucesso (evitar reenvio duplicado)
+              await savePaymentRecord(paymentId, { webhookSent: true, webhookSentAt: new Date().toISOString() });
               console.log('✅ Order summary posted to print webhook for payment', paymentId);
             }
           } catch (e) {
