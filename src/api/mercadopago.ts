@@ -44,7 +44,7 @@ export type GeneratePixResult = {
   [key: string]: any;
 }
 
-export async function generatePix(amount: number, orderId: string): Promise<GeneratePixResult> {
+export async function generatePix(amount: number, orderId: string, orderData?: any): Promise<GeneratePixResult> {
   try {
     await loadRuntimeConfig();
     const apiBase = getApiBase();
@@ -55,14 +55,24 @@ export async function generatePix(amount: number, orderId: string): Promise<Gene
       pixUrl = `${apiBase}/api/generate-pix`;
     }
     
-    // Use application/x-www-form-urlencoded to avoid CORS preflight in many cases
-    const params = new URLSearchParams();
-    params.set('amount', String(amount));
-    params.set('orderId', String(orderId));
+    // Use JSON to ensure orderData is properly sent
+    const payload = {
+      amount,
+      orderId,
+      orderData: orderData || null
+    };
+    
+    console.log('🚀 Enviando generatePix com payload:', {
+      amount,
+      orderId,
+      hasOrderData: !!orderData,
+      orderDataKeys: orderData ? Object.keys(orderData).join(', ') : 'N/A'
+    });
+    
     const res = await fetch(pixUrl, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: params.toString()
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
     });
 
     if (!res.ok) {
