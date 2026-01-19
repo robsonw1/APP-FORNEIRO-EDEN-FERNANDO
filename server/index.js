@@ -716,19 +716,40 @@ app.get('/api/check-payment/:id', async (req, res) => {
       return res.json({ status });
     }
 
-    // Consultar Mercado Pago
+    // ✅ NOVO: Primeiro tenta obter do armazenamento local (salvo pelo webhook)
+    try {
+      const localRec = await getPaymentRecord(String(id));
+      if (localRec && localRec.status) {
+        console.log(`📚 Retornando status local para ${id}:`, localRec.status);
+        return res.json({ status: localRec.status, raw: localRec, fromLocalStorage: true });
+      }
+    } catch (e) {
+      // Continue para tentar MP se local falhar
+      console.log(`⚠️ Não conseguiu ler local para ${id}, tentando MP API`);
+    }
+
+    // Se não achou localmente, consulta Mercado Pago
+    console.log(`🔍 Consultando MercadoPago para ${id}...`);
     const mpRes = await fetch(`https://api.mercadopago.com/v1/payments/${id}`, {
       headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` }
     });
     
     if (!mpRes.ok) {
+      console.warn(`⚠️ Erro ao consultar MP para ${id}: status ${mpRes.status}`);
       return res.status(mpRes.status).json({ error: 'Erro ao consultar pagamento' });
     }
     
     const data = await mpRes.json();
-    console.log('Status consultado:', data.status);
+    console.log(`✅ Status consultado em MP para ${id}:`, data.status);
     
-    res.json({ status: data.status, raw: data });
+    // Salvar também localmente para futuras consultas
+    try {
+      await savePaymentRecord(String(id), { status: data.status, raw: data });
+    } catch (e) {
+      // Ignore save errors
+    }
+    
+    res.json({ status: data.status, raw: data, fromMercadoPago: true });
   } catch (err) {
     console.error('Erro ao consultar pagamento:', err);
     res.status(500).json({ error: 'Falha ao consultar pagamento' });
