@@ -24,6 +24,8 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
   const [paymentStatus, setPaymentStatus] = useState<"pending" | "completed" | "expired">("pending")
   const [paymentId, setPaymentId] = useState<string | number | null>(null)
   const [checkIntervalId, setCheckIntervalId] = useState<NodeJS.Timeout | null>(null)
+  // ✅ NOVO: SessionId único para cada tentativa de PIX
+  const [sessionId, setSessionId] = useState<string>("")
 
   // ✅ NOVO: Cleanup ao fechar modal
   useEffect(() => {
@@ -37,7 +39,11 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
 
   useEffect(() => {
     if (isOpen) {
-      console.log('🔍 DEBUG - PixPaymentModal - Props:', { total, orderId, orderData });
+      // ✅ NOVO: Gerar sessionId único para esta tentativa de PIX
+      const newSessionId = `pix-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      setSessionId(newSessionId)
+      
+      console.log('🔍 DEBUG - PixPaymentModal Aberto - Props:', { total, orderId, orderData, sessionId: newSessionId });
       // ✅ NOVO: Resetar estado quando abre
       setQRCodeData("")
       setPixCode("")
@@ -57,6 +63,9 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
   useEffect(() => {
     if (!isOpen) return
     let ws: WebSocket | null = null
+    // ✅ NOVO: Capturar sessionId atual
+    const currentSessionId = sessionId
+    
     try {
       // Prefer environment variable (set at build/runtime)
       // @ts-ignore
@@ -84,9 +93,17 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
       ws.addEventListener('message', (evt) => {
         try {
           const msg = JSON.parse(evt.data)
+          
+          // ✅ NOVO: Validar que ainda estamos na mesma sessão
+          if (currentSessionId !== sessionId) {
+            console.log(`⚠️ SessionId mudou, ignorando mensagem WebSocket antiga`)
+            return
+          }
+
           if (msg && msg.type === 'payment_update' && msg.payload && ((msg.payload.id && String(msg.payload.id) === String(paymentId)) || msg.payload.orderId === orderId)) {
             const st = String(msg.payload.status).toLowerCase()
             if (st === 'approved' || st === 'paid' || st === 'success') {
+              console.log(`✅ WebSocket confirmou pagamento (sessionId: ${currentSessionId})`)
               setPaymentStatus('completed')
               try { onPaymentConfirmed && onPaymentConfirmed() } catch(e){}
               setTimeout(() => onClose(), 2000)
@@ -208,14 +225,28 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
       clearInterval(checkIntervalId)
     }
 
-    console.log(`🔍 Iniciando verificação de pagamento para ${id}...`)
+    // ✅ NOVO: Capturar sessionId atual para validar respostas
+    const currentSessionId = sessionId
+    console.log(`🔍 Iniciando verificação de pagamento para ${id} (sessionId: ${currentSessionId})...`)
 
     // Fazer uma verificação imediata quando o usuário clica no botão
     const checkNow = async () => {
       try {
+        // ✅ NOVO: Validar que ainda estamos na mesma sessão
+        if (sessionId !== currentSessionId) {
+          console.log(`⚠️ SessionId mudou, descartando resposta antiga (${currentSessionId} vs ${sessionId})`)
+          return
+        }
+
         console.log(`🔄 Verificando pagamento ${id}...`)
         const status = await checkPaymentStatus(String(id))
         console.log(`📊 Status retornado: ${status}`)
+
+        // ✅ NOVO: Validar NOVAMENTE antes de processar
+        if (sessionId !== currentSessionId) {
+          console.log(`⚠️ SessionId mudou entre requisição e resposta, descartando`)
+          return
+        }
 
         if (status === "approved" || status === 'paid' || status === 'success') {
           console.log('✅ PAGAMENTO CONFIRMADO!')
@@ -291,8 +322,19 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
             }
           }
           
+          // ✅ NOVO: Delay para garantir que é um pagamento real
+          console.log('⏳ Aguardando 1s antes de confirmar para garantir que é pagamento real...')
+          await new Promise(resolve => setTimeout(resolve, 1000))
+          
+          // ✅ NOVO: Validar NOVAMENTE após delay
+          if (sessionId !== currentSessionId) {
+            console.log(`⚠️ SessionId mudou durante delay, descartando confirmação`)
+            return
+          }
+          
           // Chamar callback
           try { 
+            console.log(`✅ Confirmando pagamento finalmente (sessionId: ${currentSessionId})`)
             onPaymentConfirmed && onPaymentConfirmed() 
           } catch(e){
             console.error('Erro ao chamar onPaymentConfirmed:', e)
@@ -325,7 +367,14 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
     checkNow()
 
     // Depois, fazer polling a cada 3 segundos
-    const newInterval = setInterval(checkNow, 3000)
+    // ✅ NOVO: Validação extra no intervalo
+    const newInterval = setInterval(() => {
+      if (sessionId === currentSessionId) {
+        checkNow()
+      } else {
+        console.log(`⚠️ Polling ignorado - sessionId mudou`)
+      }
+    }, 3000)
 
     setCheckIntervalId(newInterval)
   }
