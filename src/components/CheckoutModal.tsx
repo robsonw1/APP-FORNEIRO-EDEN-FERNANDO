@@ -846,7 +846,13 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
 
       <PixPaymentModal
         isOpen={isPixModalOpen}
-        onClose={() => setIsPixModalOpen(false)}
+        onClose={() => {
+          console.log('🚪 PIX Modal fechando - Resetando estado...')
+          setIsPixModalOpen(false)
+          // ✅ NOVO: Resetar estado para garantir novo pedido não confunda com anterior
+          setCurrentOrderId(null)
+          setCurrentOrderData(null)
+        }}
         total={total}
         orderId={currentOrderId || Date.now().toString()}
         orderData={currentOrderData}
@@ -854,6 +860,9 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
           console.log('✅ PIX CONFIRMADO - Limpando estado completo...')
           setIsPixModalOpen(false)
           setStep(3)
+          // ✅ Resetar IDs para próximo pedido
+          setCurrentOrderId(null)
+          setCurrentOrderData(null)
           // ✅ NOVO: Limpar carrinho imediatamente após pagamento confirmado
           if (onClearCart) {
             console.log('🧹 Limpando carrinho após confirmação de pagamento PIX')
