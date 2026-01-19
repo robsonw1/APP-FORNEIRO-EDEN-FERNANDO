@@ -26,6 +26,8 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
   const [checkIntervalId, setCheckIntervalId] = useState<NodeJS.Timeout | null>(null)
   // ✅ NOVO: SessionId único para cada tentativa de PIX
   const [sessionId, setSessionId] = useState<string>("")
+  // ✅ NOVO: Rastrear se pagamento já foi processado nesta sessão
+  const [paymentProcessed, setPaymentProcessed] = useState(false)
 
   // ✅ NOVO: Cleanup ao fechar modal
   useEffect(() => {
@@ -52,6 +54,7 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
       setError(null)
       setPaymentStatus("pending")
       setPaymentId(null)
+      setPaymentProcessed(false) // ✅ NOVO: Resetar flag
       
       generatePixPayment()
       const timer = startCountdown()
@@ -65,6 +68,7 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
     let ws: WebSocket | null = null
     // ✅ NOVO: Capturar sessionId atual
     const currentSessionId = sessionId
+    console.log(`🔗 WebSocket: Abrindo para sessionId ${currentSessionId}`)
     
     try {
       // Prefer environment variable (set at build/runtime)
@@ -89,21 +93,42 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
       }
 
       ws = new WebSocket(wsUrl)
-      ws.addEventListener('open', () => console.log('WS connected for Pix updates'))
+      ws.addEventListener('open', () => console.log(`🔗 WS conectado para sessionId ${currentSessionId}`))
       ws.addEventListener('message', (evt) => {
         try {
           const msg = JSON.parse(evt.data)
           
-          // ✅ NOVO: Validar que ainda estamos na mesma sessão
+          // ✅ NOVO: Validar ANTES que ainda estamos na mesma sessão
           if (currentSessionId !== sessionId) {
-            console.log(`⚠️ SessionId mudou, ignorando mensagem WebSocket antiga`)
+            console.log(`⚠️ WebSocket ignorando mensagem - sessionId mudou (${currentSessionId} vs ${sessionId})`)
+            return
+          }
+          
+          // ✅ NOVO: Só processar se o paymentId atual corresponde
+          if (!paymentId || String(msg.payload?.id) !== String(paymentId)) {
+            console.log(`⚠️ WebSocket ignorando - paymentId não corresponde (esperado: ${paymentId}, recebido: ${msg.payload?.id})`)
             return
           }
 
           if (msg && msg.type === 'payment_update' && msg.payload && ((msg.payload.id && String(msg.payload.id) === String(paymentId)) || msg.payload.orderId === orderId)) {
             const st = String(msg.payload.status).toLowerCase()
+            console.log(`📨 WebSocket recebeu status: ${st} para paymentId ${paymentId}`)
+            
             if (st === 'approved' || st === 'paid' || st === 'success') {
-              console.log(`✅ WebSocket confirmou pagamento (sessionId: ${currentSessionId})`)
+              // ✅ NOVO: Double check - validar uma última vez antes de confirmar
+              if (currentSessionId !== sessionId) {
+                console.log(`⚠️ WebSocket descartando confirmação - sessionId mudou no último momento`)
+                return
+              }
+              
+              // ✅ NOVO: Validar que não já processamos
+              if (paymentProcessed) {
+                console.log(`⚠️ WebSocket: pagamento já foi processado, ignorando`)
+                return
+              }
+              
+              console.log(`✅ WebSocket confirmou pagamento (sessionId: ${currentSessionId}, paymentId: ${paymentId})`)
+              setPaymentProcessed(true) // ✅ NOVO: Marcar como processado
               setPaymentStatus('completed')
               try { onPaymentConfirmed && onPaymentConfirmed() } catch(e){}
               setTimeout(() => onClose(), 2000)
@@ -119,9 +144,10 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
       console.warn('WS connection failed, will fallback to polling', e)
     }
     return () => {
+      console.log(`🔗 Fechando WebSocket para sessionId ${currentSessionId}`)
       try { ws && ws.close() } catch (e) {}
     }
-  }, [isOpen, paymentId])
+  }, [isOpen, paymentId, sessionId])
 
   const formatTime = (seconds: number) => {
     const minutes = Math.floor(seconds / 60)
@@ -249,7 +275,21 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
         }
 
         if (status === "approved" || status === 'paid' || status === 'success') {
+          // ✅ NOVO: Validar que ainda estamos na mesma sessão
+          if (sessionId !== currentSessionId) {
+            console.log(`⚠️ SessionId mudou, descartando confirmação`)
+            return
+          }
+          
+          // ✅ NOVO: Validar que não já processamos este pagamento
+          if (paymentProcessed) {
+            console.log(`⚠️ Pagamento já foi processado nesta sessão, ignorando`)
+            return
+          }
+          
           console.log('✅ PAGAMENTO CONFIRMADO!')
+          // ✅ NOVO: Marcar como processado IMEDIATAMENTE
+          setPaymentProcessed(true)
           setPaymentStatus("completed")
           
           // Enviar dados para webhook quando pagamento for confirmado
