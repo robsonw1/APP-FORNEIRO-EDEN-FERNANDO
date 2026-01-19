@@ -736,7 +736,9 @@ app.get('/api/check-payment/:id', async (req, res) => {
     
     if (!mpRes.ok) {
       console.warn(`⚠️ Erro ao consultar MP para ${id}: status ${mpRes.status}`);
-      return res.status(mpRes.status).json({ error: 'Erro ao consultar pagamento' });
+      // CRITICAL: Never force approval when MP API fails. Return pending status instead.
+      console.error('❌ MP API failed - returning "pending" to prevent auto-approval');
+      return res.json({ status: 'pending', error: 'MP API unavailable', mpStatus: mpRes.status });
     }
     
     const data = await mpRes.json();
@@ -883,40 +885,39 @@ app.post('/api/webhook', express.json({ type: '*/*' }), async (req, res) => {
     let data;
     try { data = JSON.parse(text) } catch(e) { data = { raw: text } }
 
-    // If MP returns error, try to use stored payment record instead (PIX sometimes syncs slowly)
+    // If MP returns error, we CANNOT automatically approve the payment
+    // This is dangerous and causes chargebacks. We must wait for confirmation.
     if (mpRes.status >= 400) {
       console.error('❌ Error fetching payment from MP in webhook:', data);
-      console.log('⚠️ MP returned error, checking local stored payment record...');
+      console.log('⚠️ MP API unavailable or payment not found. Cannot process without real MP confirmation.');
       
-      const storedRec = await getPaymentRecord(paymentId);
-      if (storedRec && storedRec.orderData) {
-        console.log('✅ Found stored orderData for payment', paymentId, '- will use it to forward to webhook');
-        data = { 
-          id: paymentId, 
-          status: 'approved', 
-          statusDetail: 'credited', 
-          raw: storedRec 
-        };
-      } else {
-        console.log('⚠️ No stored orderData found for payment', paymentId);
-        // Still return success to avoid retry loops, but log the issue
-        return res.status(200).send('ok-but-no-data');
-      }
+      // CRITICAL: Never force approval. Instead, just acknowledge the webhook and wait for retry
+      console.warn('⚠️ WEBHOOK RECEIVED BUT CANNOT CONFIRM - waiting for MP API to become available or another webhook');
+      
+      // Return 202 (Accepted) to tell MercadoPago we got it, but we're not processing yet
+      return res.status(202).send('accepted-but-waiting-for-confirmation');
     }
 
-    // Update local record with MP status (or use fallback if MP failed)
+    // Update local record with MP status
     if (data.status) {
       await savePaymentRecord(paymentId, { status: data.status, raw: data });
       console.log('✅ Webhook processed payment', paymentId, 'status:', data.status);
     }
     
-    // Notify frontend via websocket
-    tryBroadcastPayment({ id: String(paymentId), status: data.status || 'approved', raw: data });
+    // Notify frontend via websocket with REAL status from MercadoPago, never force 'approved'
+    tryBroadcastPayment({ id: String(paymentId), status: data.status || 'pending', raw: data });
     
     // If payment is approved/paid, forward stored orderData to printing webhook if configured
     const printUrl = process.env.PRINT_WEBHOOK_URL;
     const paymentStatus = String(data.status || '').toLowerCase();
     const isApproved = paymentStatus === 'approved' || paymentStatus === 'paid' || paymentStatus === 'success';
+    
+    // 🔴 CRITICAL VALIDATION: Only forward to print if status came directly from MercadoPago confirmation
+    // Never forward if status is anything else (pending, rejected, etc) even if orderData exists
+    if (!isApproved) {
+      console.warn(`⚠️ Payment ${paymentId} status is '${paymentStatus}' - NOT forwarding to print webhook. Will wait for 'approved' status.`);
+      return res.status(200).send('ok-status-not-approved');
+    }
     
     if (printUrl && isApproved) {
       try {
