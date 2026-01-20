@@ -12,7 +12,7 @@ import FloatingCartButton from "@/components/FloatingCartButton";
 import CheckoutModal from "@/components/CheckoutModal";
 import { useCart } from "@/hooks/useCart";
 import { categories } from "@/data/products";
-import { useProducts } from "@/hooks/useProducts";
+import { useProducts, useProductsSync } from "@/hooks/useProducts";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useEstablishment } from '@/hooks/useEstablishment';
@@ -61,6 +61,9 @@ const Index = () => {
   };
   const { products } = useProducts();
   const { settings } = useEstablishment();
+  
+  // 🔄 Sincronizar produtos automaticamente
+  useProductsSync();
 
   // Função para filtrar produtos por categoria
   const getProductsByCategory = (category: string) => {
