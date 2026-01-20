@@ -482,6 +482,26 @@ app.post('/api/generate-pix', async (req, res) => {
     // Prepare phone digits only for email local-part
     const phoneDigits = String(rawPhone || '').replace(/[^0-9]/g, '') || String(Date.now()).slice(-9);
 
+    // ✅ VALIDAÇÃO CRÍTICA: Extrair CPF do orderData
+    const rawCpf = req.body.orderData?.customer?.cpf 
+      ? String(req.body.orderData.customer.cpf).replace(/\D/g, '') 
+      : (req.body.payer?.identification?.number ? String(req.body.payer.identification.number).replace(/\D/g, '') : null);
+    
+    // Validar CPF: não pode ser null, vazio ou 11 zeros
+    if (!rawCpf || rawCpf === '00000000000' || rawCpf.length !== 11) {
+      console.error('❌ ERRO CRÍTICO: CPF inválido ou não informado', {
+        fornecido: req.body.orderData?.customer?.cpf,
+        limpo: rawCpf,
+        cliente: rawName,
+        telefone: rawPhone
+      });
+      return res.status(400).json({ 
+        error: 'CPF inválido', 
+        detail: 'CPF é obrigatório e deve ter 11 dígitos. Recebido: ' + (rawCpf?.length || 0) + ' dígitos',
+        receivedCpf: rawCpf
+      });
+    }
+
     // Format local name for email: use only the first name, lowercase, remove non-alphanum, replace spaces with dots
     const formattedLocalName = String(firstName || 'cliente')
       .toLowerCase()
@@ -506,10 +526,7 @@ app.post('/api/generate-pix', async (req, res) => {
         email: (req.body.payer && req.body.payer.email) || fakeEmail,
         identification: {
           type: req.body.payer?.identification?.type || 'CPF',
-          // ✅ CRITICAL: Use real CPF from orderData, remove formatting (dots/dashes)
-          number: req.body.orderData?.customer?.cpf 
-            ? String(req.body.orderData.customer.cpf).replace(/\D/g, '') 
-            : (req.body.payer?.identification?.number ? String(req.body.payer.identification.number).replace(/\D/g, '') : '00000000000')
+          number: rawCpf  // ✅ Usar CPF já validado
         }
       }
     }
