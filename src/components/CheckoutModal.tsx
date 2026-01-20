@@ -45,6 +45,7 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
   const [customerData, setCustomerData] = useState({
     name: '',
     phone: '',
+    cpf: '',
     address: '',
     neighborhood: '',
     reference: '',
@@ -333,7 +334,7 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
       customer: {
         name: customerData.name,
         phone: customerData.phone,
-        cpf: '', // Será preenchido no PixPaymentModal
+        cpf: customerData.cpf,
         address: customerData.address,
         neighborhood: customerData.neighborhood,
         reference: customerData.reference
@@ -558,6 +559,17 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
               placeholder="(11) 99999-9999"
             />
           </div>
+        </div>
+
+        <div>
+          <Label htmlFor="cpf">CPF (para pagamento) *</Label>
+          <Input
+            id="cpf"
+            value={customerData.cpf}
+            onChange={(e) => setCustomerData({...customerData, cpf: e.target.value})}
+            placeholder="000.000.000-00"
+            maxLength={14}
+          />
         </div>
 
         {deliveryType === 'entrega' && (
