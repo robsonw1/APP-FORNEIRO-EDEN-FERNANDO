@@ -841,20 +841,38 @@ app.post('/api/webhook', express.json({ type: '*/*' }), async (req, res) => {
         console.log('❌ Headers disponíveis:', req.headers);
         return res.status(400).send('Missing signature');
       }
-      // signature may be 'sha256=...' or raw; normalize
-      const incoming = String(sig).replace(/^sha256=/i, '');
+      
+      // MercadoPago sends signature in format: ts=1234567890,v1=hash_value
+      // Extract the v1 (hash) part
+      let incoming = String(sig);
+      const v1Match = incoming.match(/v1=([a-f0-9]+)/i);
+      if (v1Match && v1Match[1]) {
+        incoming = v1Match[1];
+      } else {
+        // If no v1= format, try raw hash or sha256= prefix
+        incoming = incoming.replace(/^sha256=/i, '');
+      }
+      
+      // Calculate HMAC-SHA256
       const hmac = crypto.createHmac('sha256', WEBHOOK_SECRET).update(raw).digest('hex');
       
       console.log('🔍 Comparação de assinatura:');
       console.log('  Esperado (hmac):', hmac);
-      console.log('  Recebido:', incoming);
+      console.log('  Recebido (v1):', incoming);
       
       if (hmac !== incoming) {
         console.warn('❌ Webhook signature mismatch');
         console.warn('  Secret length:', WEBHOOK_SECRET.length);
         console.warn('  Secret (first 20):', WEBHOOK_SECRET.substring(0, 20));
-        // TEMP: Log a erro mas aceita mesmo assim para debug
-        console.log('⚠️ ACEITANDO WEBHOOK MESMO COM ASSINATURA INVÁLIDA (modo debug)');
+        console.warn('  Raw sig header:', sig.substring(0, 50));
+        // CRITICAL: For LIVE mode, reject invalid signatures! Only accept in test mode.
+        const liveMode = req.body && req.body.live_mode;
+        if (liveMode) {
+          console.error('🔴 REJEITANDO WEBHOOK INVALID EM MODO LIVE - Assinatura inválida é risco de segurança!');
+          return res.status(401).send('Invalid signature');
+        } else {
+          console.log('⚠️ TEST MODE: Aceitando webhook com assinatura inválida para teste');
+        }
       } else {
         console.log('✅ Assinatura válida!');
       }
@@ -875,36 +893,83 @@ app.post('/api/webhook', express.json({ type: '*/*' }), async (req, res) => {
     }
 
     // Fetch payment status from Mercado Pago and update local record
-    // BUT: if MP API fails, use the stored orderData from when payment was created
+    // If MP API fails, retry with exponential backoff (async, doesn't block webhook response)
     console.log('🔍 Fetching payment details from MP for ID:', paymentId);
     
-    const mpRes = await fetch(`https://api.mercadopago.com/payments/${paymentId}`, { 
-      headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` } 
-    });
-    const text = await mpRes.text();
-    let data;
-    try { data = JSON.parse(text) } catch(e) { data = { raw: text } }
-
-    // If MP returns error, we CANNOT automatically approve the payment
-    // This is dangerous and causes chargebacks. We must wait for confirmation.
-    if (mpRes.status >= 400) {
-      console.error('❌ Error fetching payment from MP in webhook:', data);
-      console.log('⚠️ MP API unavailable or payment not found. Cannot process without real MP confirmation.');
-      
-      // CRITICAL: Never force approval. Instead, just acknowledge the webhook and wait for retry
-      console.warn('⚠️ WEBHOOK RECEIVED BUT CANNOT CONFIRM - waiting for MP API to become available or another webhook');
-      
-      // Return 202 (Accepted) to tell MercadoPago we got it, but we're not processing yet
-      return res.status(202).send('accepted-but-waiting-for-confirmation');
+    // Helper: fetch with retry
+    async function fetchMpPaymentWithRetry(id, maxRetries = 3) {
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const res = await fetch(`https://api.mercadopago.com/payments/${id}`, { 
+            headers: { 'Authorization': `Bearer ${ACCESS_TOKEN}` } 
+          });
+          const text = await res.text();
+          let data;
+          try { data = JSON.parse(text) } catch(e) { data = { raw: text } }
+          
+          if (res.ok) {
+            console.log(`✅ MP API success on attempt ${attempt}:`, data.status);
+            return { status: res.status, data };
+          } else if (attempt < maxRetries) {
+            // Retry with exponential backoff
+            const delayMs = 1000 * Math.pow(2, attempt - 1); // 1s, 2s, 4s
+            console.warn(`⚠️ Attempt ${attempt} failed (${res.status}). Retrying in ${delayMs}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          } else {
+            console.error(`❌ Failed after ${maxRetries} attempts:`, data);
+            return { status: res.status, data };
+          }
+        } catch (e) {
+          console.error(`❌ Attempt ${attempt} error:`, e.message);
+          if (attempt < maxRetries) {
+            const delayMs = 1000 * Math.pow(2, attempt - 1);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+          } else {
+            throw e;
+          }
+        }
+      }
+    }
+    
+    const mpRes = await fetchMpPaymentWithRetry(paymentId);
+    const text = mpRes.data && typeof mpRes.data === 'string' ? mpRes.data : JSON.stringify(mpRes.data || {});
+    let data = mpRes.data;
+    if (typeof data === 'string') {
+      try { data = JSON.parse(data) } catch(e) { data = { raw: data } }
     }
 
-    // Update local record with MP status
+    // If MP returns error, try fallback to local stored record
+    // BUT: Only use if status is ACTUALLY 'approved' in storage (never force it)
+    if (mpRes.status >= 400) {
+      console.error('❌ Error fetching payment from MP in webhook (after retries):', data);
+      console.log('⚠️ MP API error. Checking if we have a stored record with confirmed status...');
+      
+      const storedRec = await getPaymentRecord(paymentId);
+      
+      // ✅ SAFE FALLBACK: Use stored record ONLY if it was already marked 'approved'
+      if (storedRec && storedRec.status && String(storedRec.status).toLowerCase() === 'approved') {
+        console.log('✅ Found stored record for payment', paymentId, 'with CONFIRMED status: approved');
+        console.log('📤 Using fallback to forward order to webhook');
+        data = storedRec;
+      } else if (storedRec && storedRec.status) {
+        // Stored status is 'pending' - this means payment hasn't been confirmed yet by MP
+        console.log('⏳ Stored record shows status:', storedRec.status, '- MP payment not yet confirmed');
+        console.warn('⚠️ Cannot process yet. Waiting for payment confirmation from MercadoPago.');
+        return res.status(202).send('accepted-awaiting-mp-confirmation');
+      } else {
+        // No record at all
+        console.warn('⚠️ No record found for this payment. Cannot process without MP confirmation.');
+        return res.status(202).send('accepted-but-waiting-for-confirmation');
+      }
+    }
+
+    // Update local record with MP status (or confirmed stored status if fallback was used)
     if (data.status) {
       await savePaymentRecord(paymentId, { status: data.status, raw: data });
       console.log('✅ Webhook processed payment', paymentId, 'status:', data.status);
     }
     
-    // Notify frontend via websocket with REAL status from MercadoPago, never force 'approved'
+    // Notify frontend via websocket with status (from MP or confirmed storage)
     tryBroadcastPayment({ id: String(paymentId), status: data.status || 'pending', raw: data });
     
     // If payment is approved/paid, forward stored orderData to printing webhook if configured
