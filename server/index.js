@@ -506,7 +506,10 @@ app.post('/api/generate-pix', async (req, res) => {
         email: (req.body.payer && req.body.payer.email) || fakeEmail,
         identification: {
           type: req.body.payer?.identification?.type || 'CPF',
-          number: req.body.payer?.identification?.number || req.body.orderData?.customer?.cpf || '00000000000'
+          // ✅ CRITICAL: Use real CPF from orderData, remove formatting (dots/dashes)
+          number: req.body.orderData?.customer?.cpf 
+            ? String(req.body.orderData.customer.cpf).replace(/\D/g, '') 
+            : (req.body.payer?.identification?.number ? String(req.body.payer.identification.number).replace(/\D/g, '') : '00000000000')
         }
       }
     }
