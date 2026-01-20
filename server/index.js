@@ -1242,8 +1242,129 @@ function tryBroadcastPayment(payload) {
   }
 }
 
-// Update check-payment endpoint to broadcast
-// ...existing code...
+// ========================================
+// PRODUCTS API - SINCRONIZAÇÃO DE CARDÁPIO
+// ========================================
+
+const productsFilePath = path.join(process.cwd(), 'server', 'data', 'products.json');
+
+// Função auxiliar para ler/escrever produtos
+function loadProducts() {
+  try {
+    if (fs.existsSync(productsFilePath)) {
+      const data = fs.readFileSync(productsFilePath, 'utf-8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.warn('⚠️ Erro ao ler products.json, usando padrão vazio:', error.message);
+  }
+  return [];
+}
+
+function saveProducts(products) {
+  try {
+    fs.writeFileSync(productsFilePath, JSON.stringify(products, null, 2));
+    console.log('✅ Produtos salvos com sucesso');
+    return true;
+  } catch (error) {
+    console.error('❌ Erro ao salvar produtos:', error);
+    return false;
+  }
+}
+
+// 🔄 GET /api/products - Buscar todos os produtos
+app.get('/api/products', (req, res) => {
+  try {
+    const products = loadProducts();
+    console.log(`📥 GET /api/products - Retornando ${products.length} produtos`);
+    res.json(products);
+  } catch (error) {
+    console.error('❌ Erro ao buscar produtos:', error);
+    res.status(500).json({ error: 'Erro ao buscar produtos' });
+  }
+});
+
+// 📝 POST /api/products - Criar novo produto
+app.post('/api/products', (req, res) => {
+  try {
+    const newProduct = req.body;
+    console.log('📝 POST /api/products - Criando produto:', newProduct.id);
+    
+    if (!newProduct.id || !newProduct.name) {
+      return res.status(400).json({ error: 'ID e Nome são obrigatórios' });
+    }
+    
+    const products = loadProducts();
+    
+    // Verificar se já existe
+    if (products.some(p => p.id === newProduct.id)) {
+      return res.status(400).json({ error: 'Produto com este ID já existe' });
+    }
+    
+    products.push(newProduct);
+    
+    if (saveProducts(products)) {
+      res.status(201).json(newProduct);
+    } else {
+      res.status(500).json({ error: 'Erro ao salvar produto' });
+    }
+  } catch (error) {
+    console.error('❌ Erro ao criar produto:', error);
+    res.status(500).json({ error: 'Erro ao criar produto' });
+  }
+});
+
+// ✏️ PUT /api/products/:id - Atualizar produto
+app.put('/api/products/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    console.log('✏️ PUT /api/products/:id - Atualizando produto:', id);
+    
+    const products = loadProducts();
+    const productIndex = products.findIndex(p => p.id === id);
+    
+    if (productIndex === -1) {
+      return res.status(404).json({ error: 'Produto não encontrado' });
+    }
+    
+    const updatedProduct = { ...products[productIndex], ...updates };
+    products[productIndex] = updatedProduct;
+    
+    if (saveProducts(products)) {
+      res.json(updatedProduct);
+    } else {
+      res.status(500).json({ error: 'Erro ao atualizar produto' });
+    }
+  } catch (error) {
+    console.error('❌ Erro ao atualizar produto:', error);
+    res.status(500).json({ error: 'Erro ao atualizar produto' });
+  }
+});
+
+// 🗑️ DELETE /api/products/:id - Deletar produto
+app.delete('/api/products/:id', (req, res) => {
+  try {
+    const { id } = req.params;
+    console.log('🗑️ DELETE /api/products/:id - Deletando produto:', id);
+    
+    const products = loadProducts();
+    const filteredProducts = products.filter(p => p.id !== id);
+    
+    if (filteredProducts.length === products.length) {
+      return res.status(404).json({ error: 'Produto não encontrado' });
+    }
+    
+    if (saveProducts(filteredProducts)) {
+      res.json({ message: 'Produto deletado com sucesso' });
+    } else {
+      res.status(500).json({ error: 'Erro ao deletar produto' });
+    }
+  } catch (error) {
+    console.error('❌ Erro ao deletar produto:', error);
+    res.status(500).json({ error: 'Erro ao deletar produto' });
+  }
+});
 
 // Start server
 (async () => {
