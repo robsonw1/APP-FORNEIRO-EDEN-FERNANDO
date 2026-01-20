@@ -369,8 +369,19 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
         items,
         orderData,
         total,
-        orderId
+        orderId,
+        cpf: customerData.cpf
       });
+
+      // Validar se CPF foi preenchido
+      if (!customerData.cpf) {
+        toast({
+          title: "CPF obrigatório",
+          description: "Preencha seu CPF para realizar o pagamento via PIX",
+          variant: "destructive",
+        });
+        return;
+      }
 
       // Validar se temos itens antes de prosseguir
       if (!items || items.length === 0) {
@@ -388,6 +399,10 @@ const CheckoutModal = ({ isOpen, onClose, items, subtotal, onOrderComplete, onPr
       // para itens que não são customizados (pizzas customizadas mantêm o preço salvo).
       const structured = {
         ...orderData,
+        customer: {
+          ...orderData.customer,
+          cpf: customerData.cpf  // ✅ Garantir que CPF está incluído
+        },
         items: items.map(item => {
           const productFromStore = storeProducts.find((p: any) => p.id === item.id);
           const price = item.customization ? item.price : (productFromStore ? (Object.values(productFromStore.price)[0] ?? item.price) : item.price);
