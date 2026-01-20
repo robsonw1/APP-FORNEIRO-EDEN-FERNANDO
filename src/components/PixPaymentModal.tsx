@@ -21,7 +21,7 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
   const [timeLeft, setTimeLeft] = useState(600)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [paymentStatus, setPaymentStatus] = useState<"pending" | "completed" | "expired">("pending")
+  const [paymentStatus, setPaymentStatus] = useState<"pending" | "completed" | "expired" | "rejected">("pending")
   const [paymentId, setPaymentId] = useState<string | number | null>(null)
   const [checkIntervalId, setCheckIntervalId] = useState<NodeJS.Timeout | null>(null)
   // ✅ NOVO: SessionId único para cada tentativa de PIX
@@ -58,7 +58,14 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
       
       generatePixPayment()
       const timer = startCountdown()
-      return () => clearInterval(timer)
+      return () => {
+        clearInterval(timer)
+        // Limpar intervalo de polling se modal fechar
+        if (checkIntervalId) {
+          clearInterval(checkIntervalId)
+          setCheckIntervalId(null)
+        }
+      }
     }
   }, [isOpen])
 
@@ -133,7 +140,14 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
               try { onPaymentConfirmed && onPaymentConfirmed() } catch(e){}
               setTimeout(() => onClose(), 2000)
             } else if (st === 'rejected' || st === 'cancelled') {
+              console.error('❌ WebSocket: Pagamento rejeitado ou cancelado')
+              setPaymentStatus('rejected')
               setError('Pagamento rejeitado ou cancelado')
+              // Parar o polling quando rejeitado
+              if (checkIntervalId) {
+                clearInterval(checkIntervalId)
+                setCheckIntervalId(null)
+              }
             }
           }
         } catch (e) {
@@ -160,6 +174,11 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
       setTimeLeft((prev) => {
         if (prev <= 1) {
           setPaymentStatus("expired")
+          // Parar polling quando tempo expirar
+          if (checkIntervalId) {
+            clearInterval(checkIntervalId)
+            setCheckIntervalId(null)
+          }
           return 0
         }
         return prev - 1
@@ -171,6 +190,13 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
     try {
       setIsLoading(true)
       setError(null)
+      setPaymentStatus("pending")
+      
+      // Parar polling antigo se existir
+      if (checkIntervalId) {
+        clearInterval(checkIntervalId)
+        setCheckIntervalId(null)
+      }
 
       const payload = {
         amount: Number(total),
@@ -389,7 +415,8 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
           // Fechar modal após 2 segundos
           setTimeout(() => onClose(), 2000)
         } else if (status === 'rejected' || status === 'cancelled') {
-          console.error('❌ Pagamento rejeitado ou cancelado')
+          console.error('❌ Polling: Pagamento rejeitado ou cancelado')
+          setPaymentStatus('rejected')
           setError('Pagamento rejeitado ou cancelado')
           if (checkIntervalId) {
             clearInterval(checkIntervalId)
@@ -456,8 +483,13 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
           </div>
 
           {error ? (
-            <div className="text-red-500 text-center p-4">
-              <p>{error}</p>
+            <div className="text-red-500 text-center p-4 border border-red-300 rounded-lg bg-red-50">
+              <p className="font-semibold mb-2">⚠️ {error}</p>
+              <p className="text-sm text-gray-600 mb-4">
+                {paymentStatus === 'rejected' 
+                  ? 'Seu pagamento foi rejeitado. Clique no botão abaixo para tentar novamente com um novo QR Code.'
+                  : 'Algo deu errado. Tente novamente.'}
+              </p>
               <Button onClick={generatePixPayment} className="mt-4">
                 Tentar Novamente
               </Button>
