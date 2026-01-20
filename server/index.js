@@ -859,12 +859,34 @@ app.post('/api/webhook', express.json({ type: '*/*' }), async (req, res) => {
       console.log('🔍 Comparação de assinatura:');
       console.log('  Esperado (hmac):', hmac);
       console.log('  Recebido (v1):', incoming);
+      console.log('🔧 DEBUG - Raw sig header completo:', sig.substring(0, 100));
       
       if (hmac !== incoming) {
         console.warn('❌ Webhook signature mismatch');
         console.warn('  Secret length:', WEBHOOK_SECRET.length);
         console.warn('  Secret (first 20):', WEBHOOK_SECRET.substring(0, 20));
         console.warn('  Raw sig header:', sig.substring(0, 50));
+        console.warn('🔴 DEBUG: Recalculando com secrets diferentes...');
+        
+        // Try to validate with different possible secrets
+        const possibleSecrets = [
+          WEBHOOK_SECRET,
+          process.env.WEBHOOK_SECRET || '',
+          process.env.MP_WEBHOOK_SECRET || '',
+          process.env.MERCADO_PAGO_WEBHOOK_SECRET || ''
+        ];
+        
+        for (const testSecret of possibleSecrets) {
+          if (!testSecret) continue;
+          const testHmac = crypto.createHmac('sha256', testSecret).update(raw).digest('hex');
+          if (testHmac === incoming) {
+            console.log('✅ ENCONTRADO SECRET CORRETO!');
+            console.log('   Secret usado:', testSecret.substring(0, 20) + '...');
+            console.log('   ATUALIZE o .env com esse secret!');
+            break;
+          }
+        }
+        
         // CRITICAL: For LIVE mode, reject invalid signatures! Only accept in test mode.
         const liveMode = req.body && req.body.live_mode;
         if (liveMode) {
