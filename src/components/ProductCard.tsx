@@ -1,184 +1,204 @@
-import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { Product, products as initialProducts } from '@/data/products';
-import { useEffect } from 'react';
+import { useState, useEffect } from "react";
+import { Plus, Minus } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/components/ui/use-toast";
 
-interface ProductsStore {
-  products: Product[];
-  updateProduct: (productId: string, updates: Partial<Product>) => void;
-  createProduct: (newProduct: Product) => void;
-  deleteProduct: (productId: string) => void;
-  getProductsByCategory: (category: string) => Product[];
-  syncProducts: () => Promise<void>;
-  isLoading: boolean;
+interface ProductCardProps {
+  id: string;
+  name: string;
+  description: string;
+  price: { broto: number; grande: number };
+  category: 'combos' | 'pizzas-promocionais' | 'pizzas-premium' | 'pizzas-tradicionais' | 'pizzas-especiais' | 'pizzas-doces' | 'bebidas' | 'adicionais' | 'bordas';
+  isPopular?: boolean;
+  ingredients?: string[];
+  portions?: string;
+  drinkOptions?: string[];
+  pizzaCount?: number;
+  cartQuantity?: number;
+  available?: boolean;
+  onAddToCart: (productId: string, quantity: number) => void;
+  onPizzaClick?: (pizzaId: string, preSelectedPizza?: string) => void;
+  onHalfPizzaClick?: (pizzaId: string) => void;
 }
 
-export const useProducts = create<ProductsStore>()(
-  persist(
-    (set, get) => ({
-      products: initialProducts.map(product => ({ ...product, available: true })),
-      isLoading: false,
-      
-      syncProducts: async () => {
-        try {
-          set({ isLoading: true });
-          
-          // 🔄 Buscar produtos do servidor
-          let apiUrl = '/api/products';
-          try {
-            // @ts-ignore
-            const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : '';
-            if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
-              apiUrl = `${apiBase}/api/products`;
-            }
-          } catch (e) {}
-          
-          const response = await fetch(apiUrl);
-          if (response.ok) {
-            const remoteProducts = await response.json();
-            console.log('📥 Produtos sincronizados do servidor:', remoteProducts.length);
-            set({ products: remoteProducts });
-          } else {
-            console.warn('⚠️ Falha ao sincronizar produtos do servidor, usando cache local');
-          }
-        } catch (error) {
-          console.warn('⚠️ Erro ao sincronizar produtos:', error);
-        } finally {
-          set({ isLoading: false });
-        }
-      },
-      
-      updateProduct: async (productId, updates) => {
-        try {
-          // 📤 Atualizar no servidor
-          let apiUrl = `/api/products/${productId}`;
-          try {
-            // @ts-ignore
-            const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : '';
-            if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
-              apiUrl = `${apiBase}/api/products/${productId}`;
-            }
-          } catch (e) {}
-          
-          const response = await fetch(apiUrl, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updates)
-          });
-          
-          if (response.ok) {
-            console.log('✅ Produto atualizado no servidor:', productId);
-          } else {
-            console.warn('⚠️ Falha ao atualizar produto no servidor');
-          }
-        } catch (error) {
-          console.warn('⚠️ Erro ao atualizar produto:', error);
-        }
-        
-        // ✅ Atualizar localmente imediatamente
-        set((state) => ({
-          products: state.products.map((product) =>
-            product.id === productId
-              ? { ...product, ...updates }
-              : product
-          ),
-        }));
-      },
-      
-      createProduct: async (newProduct: Product) => {
-        try {
-          // 📤 Criar no servidor
-          let apiUrl = '/api/products';
-          try {
-            // @ts-ignore
-            const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : '';
-            if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
-              apiUrl = `${apiBase}/api/products`;
-            }
-          } catch (e) {}
-          
-          const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newProduct)
-          });
-          
-          if (response.ok) {
-            console.log('✅ Produto criado no servidor:', newProduct.id);
-          } else {
-            console.warn('⚠️ Falha ao criar produto no servidor');
-          }
-        } catch (error) {
-          console.warn('⚠️ Erro ao criar produto:', error);
-        }
-        
-        // ✅ Atualizar localmente imediatamente
-        set((state) => ({ products: [newProduct, ...state.products] }));
-      },
-      
-      deleteProduct: async (productId: string) => {
-        try {
-          // 📤 Deletar no servidor
-          let apiUrl = `/api/products/${productId}`;
-          try {
-            // @ts-ignore
-            const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : '';
-            if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
-              apiUrl = `${apiBase}/api/products/${productId}`;
-            }
-          } catch (e) {}
-          
-          const response = await fetch(apiUrl, { method: 'DELETE' });
-          
-          if (response.ok) {
-            console.log('✅ Produto deletado do servidor:', productId);
-          } else {
-            console.warn('⚠️ Falha ao deletar produto do servidor');
-          }
-        } catch (error) {
-          console.warn('⚠️ Erro ao deletar produto:', error);
-        }
-        
-        // ✅ Atualizar localmente imediatamente
-        set((state) => ({ products: state.products.filter(p => p.id !== productId) }));
-      },
-      
-      getProductsByCategory: (category: string) => {
-        return get().products.filter(product => product.category === category);
-      },
-    }),
-    {
-      name: 'products-storage',
+const ProductCard = ({
+  id,
+  name,
+  description,
+  price,
+  category,
+  isPopular,
+  ingredients,
+  portions,
+  drinkOptions,
+  pizzaCount,
+  onAddToCart,
+  onPizzaClick,
+  onHalfPizzaClick,
+  available
+}: ProductCardProps) => {
+  const [localQuantity, setLocalQuantity] = useState(0);
+  const { toast } = useToast();
+  const isAvailable = available !== false;
+
+  const handleAddToCart = () => {
+    if (!isAvailable) {
+      toast({
+        variant: "destructive",
+        title: "Produto indisponível",
+        description: "Este item não está disponível no momento."
+      });
+      return;
     }
-  )
-);
 
-// 🔄 Hook para sincronização automática
-export function useProductsSync() {
-  const { syncProducts } = useProducts();
-  
-  useEffect(() => {
-    // Sincronizar ao montar
-    syncProducts();
-    
-    // Sincronizar a cada 5 segundos
-    const interval = setInterval(() => {
-      syncProducts();
-    }, 5000);
-    
-    // Sincronizar quando a aba fica visível novamente
-    const handleVisibilityChange = () => {
-      if (!document.hidden) {
-        console.log('📱 Aba visível, sincronizando produtos...');
-        syncProducts();
+    if ((category.includes('pizzas') || category === 'combos') && onPizzaClick) {
+      onPizzaClick(id, id);
+    } else {
+      const newQuantity = localQuantity + 1;
+      setLocalQuantity(newQuantity);
+      onAddToCart(id, 1); // Sempre adiciona 1 unidade
+      
+      if (category === 'bebidas' || category === 'adicionais' || category === 'bordas') {
+        toast({
+          title: "Item adicionado",
+          description: `${name} adicionado ao carrinho`,
+          variant: "default"
+        });
       }
-    };
-    
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-    
-    return () => {
-      clearInterval(interval);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-    };
-  }, [syncProducts]);
-}
+    }
+  };
+
+  const handleDecrement = () => {
+    if (localQuantity > 0) {
+      const newQuantity = localQuantity - 1;
+      setLocalQuantity(newQuantity);
+      onAddToCart(id, -1); // Remove 1 unidade
+      
+      if (category === 'bebidas' || category === 'adicionais' || category === 'bordas') {
+        toast({
+          title: newQuantity === 0 ? "Item removido" : "Quantidade atualizada",
+          description: newQuantity === 0 ? `${name} removido do carrinho` : `${name} atualizado no carrinho`,
+          variant: newQuantity === 0 ? "destructive" : "default"
+        });
+      }
+    }
+  };
+
+  // Atualiza o estado local quando o item for atualizado no carrinho
+  useEffect(() => {
+    try {
+      const items = JSON.parse(localStorage.getItem('cart-items') || '[]');
+      const cartItem = items.find((item: any) => item.id === id);
+      if (cartItem) {
+        setLocalQuantity(cartItem.quantity);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar quantidade do item:', error);
+      setLocalQuantity(0);
+    }
+  }, [id]);
+
+  return (
+    <Card className={`relative hover:shadow-lg transition-shadow duration-200 ${!isAvailable ? 'opacity-60' : ''}`}>
+      <CardContent className="p-4">
+        <div className="absolute top-2 right-2 flex gap-2">
+          {isPopular && (
+            <Badge variant="secondary">
+              Popular
+            </Badge>
+          )}
+          {!isAvailable && (
+            <Badge variant="destructive">
+              Indisponível
+            </Badge>
+          )}
+        </div>
+
+        <div className="flex flex-col">
+          <h3 className="text-lg font-semibold">{name}</h3>
+          <p className="text-sm text-gray-600 mt-1">{description}</p>
+          
+          {ingredients && ingredients.length > 0 && (
+            <div className="mt-2">
+              <p className="text-sm text-gray-500">
+                Ingredientes: {ingredients.join(', ')}
+              </p>
+            </div>
+          )}
+
+          {portions && (
+            <p className="text-sm text-gray-500 mt-1">
+              Porções: {portions}
+            </p>
+          )}
+
+          {drinkOptions && drinkOptions.length > 0 && (
+            <div className="mt-2">
+              <p className="text-sm text-gray-500">
+                Bebidas disponíveis: {drinkOptions.join(', ')}
+              </p>
+            </div>
+          )}
+
+          <div className="mt-4">
+            <p className="text-sm font-medium">
+              {category === 'bebidas' || category === 'adicionais' || category === 'bordas' 
+                ? `R$ ${price.broto.toFixed(2)}`
+                : `Broto: R$ ${price.broto.toFixed(2)} | Grande: R$ ${price.grande.toFixed(2)}`
+              }
+            </p>
+          </div>
+
+          <div className="flex items-center justify-between mt-4">
+            {/* Controles de quantidade para bebidas, adicionais e bordas */}
+            {(category === 'bebidas' || category === 'adicionais' || category === 'bordas') ? (
+              <div className="flex items-center space-x-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDecrement}
+                  disabled={localQuantity === 0}
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <span className="w-8 text-center">{localQuantity}</span>
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleAddToCart}
+                  className="bg-gradient-primary hover:opacity-90"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </div>
+            ) : category.startsWith('pizzas-') && (
+              <div className="flex gap-2">
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleAddToCart}
+                >
+                  Escolher
+                </Button>
+              </div>
+            )}
+            {category === 'combos' && (
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleAddToCart}
+              >
+                Escolher Combo
+              </Button>
+            )}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+export { ProductCard };
+export default ProductCard;
