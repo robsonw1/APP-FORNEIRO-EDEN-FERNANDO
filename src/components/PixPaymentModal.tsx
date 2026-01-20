@@ -188,38 +188,60 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
 
   async function generatePixPayment() {
     try {
+      console.log('🔄 ============= INICIANDO NOVO generatePixPayment =============')
+      console.log(`⏰ Timestamp: ${new Date().toLocaleString('pt-BR')}`)
       setIsLoading(true)
       setError(null)
       setPaymentStatus("pending")
       
       // Parar polling antigo se existir
       if (checkIntervalId) {
+        console.log('⏹️ Parando polling anterior')
         clearInterval(checkIntervalId)
         setCheckIntervalId(null)
       }
 
+      // Gerar novo sessionId para nova tentativa
+      const newSessionId = `pix-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+      console.log(`🆔 Novo sessionId: ${newSessionId} (anterior: ${sessionId})`)
+      setSessionId(newSessionId)
+
+      // ✅ IMPORTANTE: Gerar novo orderId para cada tentativa de PIX
+      // Isso previne que MercadoPago rejeite como "ordem duplicada"
+      const newOrderId = `${orderId}-attempt-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`
+      console.log(`📋 Novo orderId: ${newOrderId} (original: ${orderId})`)
+
       const payload = {
         amount: Number(total),
-        orderId: orderId,
+        orderId: newOrderId,
         orderData: orderData || null,
         transaction_amount: Number(total),
-        description: `Pedido #${orderId}`
+        description: `Pedido #${newOrderId}`
       }
 
       console.log('📤 Enviando payload para generatePix:', {
         amount: payload.amount,
-        orderId: payload.orderId,
+        orderId: newOrderId,
+        cpf: orderData?.customer?.cpf ? '✅ Presente' : '❌ Ausente',
+        customer: orderData?.customer || {},
         hasOrderData: !!payload.orderData,
         orderDataKeys: payload.orderData ? Object.keys(payload.orderData).join(', ') : 'N/A'
       })
 
-      const data = await generatePix(Number(total), orderId, orderData) as GeneratePixResult
-      console.log('📦 Dados recebidos do generatePix proxy:', {
-        qrCodeBase64: data.qrCodeBase64 ? `Presente (${String(data.qrCodeBase64).length} chars)` : 'Ausente',
-        pixCopiaECola: data.pixCopiaECola ? `Presente (${String(data.pixCopiaECola).length} chars)` : 'Ausente',
+      const data = await generatePix(Number(total), newOrderId, orderData) as GeneratePixResult
+      console.log('� ============= RESPOSTA DO generatePix =============')
+      console.log('📦 Status recebido:', data.status)
+      console.log('📦 PaymentID recebido:', data.paymentId)
+      console.log('📦 QR Code presente?:', !!data.qrCodeBase64)
+      console.log('📦 PIX Code presente?:', !!data.pixCopiaECola)
+      console.log('📦 Dados completos:', {
+        qrCodeBase64: data.qrCodeBase64 ? `${String(data.qrCodeBase64).length} chars` : 'NULL',
+        pixCopiaECola: data.pixCopiaECola ? `${String(data.pixCopiaECola).length} chars` : 'NULL',
         paymentId: data.paymentId,
-        status: data.status
+        status: data.status,
+        allKeys: Object.keys(data)
       })
+      console.log('🔍 =======================================================')
 
       // Verificar múltiplos formatos de resposta
       const qrBase64 = data.qrCodeBase64 || data.qr_code_base64 || null
@@ -258,8 +280,16 @@ export function PixPaymentModal({ isOpen, onClose, total, orderId, orderData, on
       }
 
     } catch (error) {
-      console.error('❌ Erro ao gerar PIX:', error)
-      setError(error instanceof Error ? error.message : 'Erro ao gerar o PIX')
+      console.error('❌ ============= ERRO ao gerar PIX =============')
+      console.error('Erro completo:', error)
+      console.error('Tipo:', error instanceof Error ? error.constructor.name : typeof error)
+      console.error('Mensagem:', error instanceof Error ? error.message : String(error))
+      console.error('Stack:', error instanceof Error ? error.stack : 'N/A')
+      console.error('❌ =============================================')
+      
+      const errorMsg = error instanceof Error ? error.message : 'Erro ao gerar o PIX'
+      console.log(`⚠️ Definindo erro: "${errorMsg}"`)
+      setError(errorMsg)
     } finally {
       setIsLoading(false)
     }
