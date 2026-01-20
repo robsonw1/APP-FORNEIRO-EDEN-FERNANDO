@@ -506,7 +506,7 @@ app.post('/api/generate-pix', async (req, res) => {
         email: (req.body.payer && req.body.payer.email) || fakeEmail,
         identification: {
           type: req.body.payer?.identification?.type || 'CPF',
-          number: req.body.payer?.identification?.number || '19119119100'
+          number: req.body.payer?.identification?.number || req.body.orderData?.customer?.cpf || '00000000000'
         }
       }
     }
