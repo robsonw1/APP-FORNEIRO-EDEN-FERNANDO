@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useProducts } from '@/hooks/useProducts';
+import { useProducts, useProductsSync } from '@/hooks/useProducts';
 import ProductList from './components/ProductList';
 import AddProductModal from './components/AddProductModal';
 import EstablishmentSettings from './components/EstablishmentSettings';
@@ -12,6 +12,9 @@ import ChangePasswordDialog from './components/ChangePasswordDialog';
 
 const Dashboard = () => {
   const { products, updateProduct, createProduct, deleteProduct } = useProducts();
+  
+  // 🔄 Sincronizar produtos automaticamente
+  useProductsSync();
 
   const categorizedProducts = {
     pizzas: products.filter(p => 
