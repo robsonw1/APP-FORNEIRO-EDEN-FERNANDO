@@ -892,6 +892,13 @@ app.post('/api/webhook', express.json({ type: '*/*' }), async (req, res) => {
       return res.status(200).send('no-op');
     }
 
+    // 🧪 IGNORE TEST WEBHOOKS from MercadoPago Developers
+    const isTestMode = req.body && req.body.live_mode === false;
+    if (isTestMode) {
+      console.log('🧪 TEST MODE WEBHOOK - Ignorando para não tentar processar paymentIds fake');
+      return res.status(200).send('test-webhook-ignored');
+    }
+
     // Fetch payment status from Mercado Pago and update local record
     // If MP API fails, retry with exponential backoff (async, doesn't block webhook response)
     console.log('🔍 Fetching payment details from MP for ID:', paymentId);
