@@ -41,6 +41,7 @@ const ProductCard = ({
 }: ProductCardProps) => {
   const [localQuantity, setLocalQuantity] = useState(0);
   const { toast } = useToast();
+  // Garante que available é sempre booleano: true se undefined/true, false se explicitamente false
   const isAvailable = available !== false;
 
   const handleAddToCart = () => {
