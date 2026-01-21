@@ -13,6 +13,7 @@ import CheckoutModal from "@/components/CheckoutModal";
 import { useCart } from "@/hooks/useCart";
 import { categories } from "@/data/products";
 import { useProducts, useProductsSync } from "@/hooks/useProducts";
+import { useWebSocketSync } from "@/hooks/useWebSocketSync";
 import { products as initialProducts } from '@/data/products';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -173,6 +174,10 @@ const Index = () => {
       useProducts.setState({ products: initialProducts.map(p => ({ ...p, available: true })) });
     }
   }, [products]);
+
+  // Conectar WebSocket para sincronização em tempo real
+  useProductsSync();
+  useWebSocketSync();
 
   return (
     <div className="min-h-screen bg-gradient-accent">
