@@ -13,6 +13,7 @@ import CheckoutModal from "@/components/CheckoutModal";
 import { useCart } from "@/hooks/useCart";
 import { categories } from "@/data/products";
 import { useProducts, useProductsSync } from "@/hooks/useProducts";
+import { products as initialProducts } from '@/data/products';
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useEstablishment } from '@/hooks/useEstablishment';
@@ -164,6 +165,13 @@ const Index = () => {
 
   useEffect(() => {
     console.log('🔍 Produtos carregados:', products);
+    // Se a store estiver vazia por conta de persistência corrompida,
+    // forçamos o fallback para o catálogo inicial embutido.
+    if ((!products || products.length === 0) && initialProducts && initialProducts.length > 0) {
+      console.warn('⚠️ Produtos vazios no estado — restaurando catálogo inicial local');
+      // Uso direto da store para atualizar sem depender do servidor
+      useProducts.setState({ products: initialProducts.map(p => ({ ...p, available: true })) });
+    }
   }, [products]);
 
   return (
