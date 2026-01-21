@@ -62,7 +62,16 @@ export function useWebSocketSync() {
         ws.addEventListener('message', (event) => {
           try {
             console.log('📨 Mensagem WebSocket recebida:', event.data.slice(0, 100));
-            const data = JSON.parse(event.data);
+            
+            // 🔍 Verificar se é JSON válido
+            let data;
+            try {
+              data = JSON.parse(event.data);
+            } catch (parseError) {
+              // Se não for JSON válido (ex: "pong" simples), ignorar
+              console.log('⚠️ Mensagem não é JSON válido, ignorando:', event.data);
+              return;
+            }
             
             if (data.type === 'products_update') {
               console.log('📦 🎉 ATUALIZAÇÃO DE PRODUTOS RECEBIDA:', data.payload.length, 'produtos');
@@ -78,6 +87,9 @@ export function useWebSocketSync() {
             } else if (data.type === 'pong') {
               // Resposta do ping do servidor
               console.log('💓 Pong recebido do servidor');
+            } else if (data.type === 'payment_update') {
+              // Ignorar atualizações de pagamento por enquanto
+              console.log('💳 Payment update recebida (ignorada por enquanto)');
             } else {
               console.log('❓ Mensagem de tipo desconhecido:', data.type);
             }
