@@ -34,6 +34,10 @@ export const useProducts = create<ProductsStore>()(
             }
           } catch (e) {}
 
+          // Adiciona timestamp para evitar cache
+          const separator = apiUrl.includes('?') ? '&' : '?';
+          apiUrl = `${apiUrl}${separator}t=${Date.now()}`;
+
           const controller = new AbortController();
           const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 segundo timeout
           
