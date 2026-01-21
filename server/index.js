@@ -1237,7 +1237,8 @@ wss.on('connection', (socket) => {
     // simple ping handling
     const msgStr = String(msg);
     if (msgStr === 'ping') {
-      socket.send('pong');
+      // Enviar pong como JSON para manter consistência
+      socket.send(JSON.stringify({ type: 'pong' }));
       console.log('💓 Ping recebido e pong enviado');
     } else {
       console.log('📨 Mensagem WebSocket recebida:', msgStr.slice(0, 50));
