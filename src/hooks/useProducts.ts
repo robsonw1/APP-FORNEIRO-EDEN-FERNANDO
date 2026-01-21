@@ -34,8 +34,15 @@ export const useProducts = create<ProductsStore>()(
           const response = await fetch(apiUrl);
           if (response.ok) {
             const remoteProducts = await response.json();
-            console.log('📥 Produtos sincronizados do servidor:', remoteProducts.length);
-            set({ products: remoteProducts });
+            console.log('📥 Produtos sincronizados do servidor:', Array.isArray(remoteProducts) ? remoteProducts.length : 'invalid');
+
+            // Só sobrescreve se o servidor realmente retornar produtos
+            if (Array.isArray(remoteProducts) && remoteProducts.length > 0) {
+              set({ products: remoteProducts });
+            } else {
+              console.warn('⚠️ Servidor retornou lista vazia — mantendo catálogo local');
+              set({ products: initialProducts });
+            }
           } else {
             console.warn('⚠️ Falha ao sincronizar produtos do servidor, usando cache local');
             set({ products: initialProducts });
@@ -158,6 +165,18 @@ export const useProducts = create<ProductsStore>()(
     }),
     {
       name: 'products-storage',
+      // Ao rehidratar, evite que um valor vazio sobrescreva o catálogo inicial
+      onRehydrateStorage: () => (persistedState) => {
+        try {
+          const persisted = persistedState?.products;
+          console.log('🔁 Rehydrated products-storage:', persisted ? persisted.length : 'none');
+          if (!persisted || (Array.isArray(persisted) && persisted.length === 0)) {
+            console.warn('⚠️ Persistência encontrou products vazios; mantendo catálogo local inicial');
+          }
+        } catch (e) {
+          console.warn('⚠️ Erro onRehydrateStorage:', e);
+        }
+      }
     }
   )
 );
