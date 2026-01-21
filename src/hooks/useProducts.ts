@@ -16,7 +16,7 @@ interface ProductsStore {
 export const useProducts = create<ProductsStore>()(
   persist(
     (set, get) => ({
-      products: initialProducts.map(product => ({ ...product, available: true })),
+      products: initialProducts.map(product => ({ ...product, available: product.available ?? true })),
       isLoading: false,
       
       syncProducts: async () => {
@@ -36,20 +36,25 @@ export const useProducts = create<ProductsStore>()(
             const remoteProducts = await response.json();
             console.log('📥 Produtos sincronizados do servidor:', Array.isArray(remoteProducts) ? remoteProducts.length : 'invalid');
 
+            // Garante que todos os produtos têm 'available' definido
+            const productsWithAvailable = Array.isArray(remoteProducts) 
+              ? remoteProducts.map(p => ({ ...p, available: p.available ?? true }))
+              : initialProducts;
+
             // Só sobrescreve se o servidor realmente retornar produtos
             if (Array.isArray(remoteProducts) && remoteProducts.length > 0) {
-              set({ products: remoteProducts });
+              set({ products: productsWithAvailable });
             } else {
               console.warn('⚠️ Servidor retornou lista vazia — mantendo catálogo local');
-              set({ products: initialProducts });
+              set({ products: initialProducts.map(p => ({ ...p, available: p.available ?? true })) });
             }
           } else {
             console.warn('⚠️ Falha ao sincronizar produtos do servidor, usando cache local');
-            set({ products: initialProducts });
+            set({ products: initialProducts.map(p => ({ ...p, available: p.available ?? true })) });
           }
         } catch (error) {
           console.warn('⚠️ Erro ao sincronizar produtos:', error);
-          set({ products: initialProducts });
+          set({ products: initialProducts.map(p => ({ ...p, available: p.available ?? true })) });
         } finally {
           set({ isLoading: false });
         }
@@ -86,7 +91,7 @@ export const useProducts = create<ProductsStore>()(
         set((state) => ({
           products: state.products.map((product) =>
             product.id === productId
-              ? { ...product, ...updates }
+              ? { ...product, ...updates, available: updates.available ?? product.available ?? true }
               : product
           ),
         }));
@@ -94,6 +99,9 @@ export const useProducts = create<ProductsStore>()(
       
       createProduct: async (newProduct: Product) => {
         try {
+          // Garantir que available está definido
+          const productToCreate = { ...newProduct, available: newProduct.available ?? true };
+          
           // 📤 Criar no servidor
           let apiUrl = '/api/products';
           try {
@@ -107,14 +115,19 @@ export const useProducts = create<ProductsStore>()(
           const response = await fetch(apiUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(newProduct)
+            body: JSON.stringify(productToCreate)
           });
           
           if (response.ok) {
-            console.log('✅ Produto criado no servidor:', newProduct.id);
-            set((state) => ({ products: [newProduct, ...state.products] }));
+            console.log('✅ Produto criado no servidor:', productToCreate.id);
+            // Atualizar localmente com o produto criado
+            set((state) => ({ products: [productToCreate, ...state.products] }));
+            // Sincronizar do servidor para garantir que está salvo
+            await get().syncProducts();
           } else {
-            console.warn('⚠️ Falha ao criar produto no servidor');
+            console.warn('⚠️ Falha ao criar produto no servidor:', response.status);
+            // Mesmo se falhar no servidor, adiciona localmente
+            set((state) => ({ products: [productToCreate, ...state.products] }));
           }
         } catch (error) {
           console.warn('⚠️ Erro ao criar produto:', error);
