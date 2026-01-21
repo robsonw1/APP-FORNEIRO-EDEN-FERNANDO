@@ -11,23 +11,44 @@ export function useWebSocketSync() {
     const connect = () => {
       try {
         // Determinar URL do WebSocket baseado no ambiente
-        let wsUrl = 'ws://localhost:3001';
+        let wsUrl = '';
         
         try {
-          const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : '';
-          if (apiBase) {
+          // 1️⃣ Tentar pegar VITE_API_BASE
+          const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE).trim() : '';
+          console.log('📋 VITE_API_BASE:', apiBase || '(vazio)');
+          
+          if (apiBase && apiBase.length > 0) {
             // Converter HTTPS para WSS, HTTP para WS
             wsUrl = apiBase.replace(/^https:/, 'wss:').replace(/^http:/, 'ws:');
+            // Remover trailing slash e /api
+            wsUrl = wsUrl.replace(/\/api\/?$/, '').replace(/\/$/, '');
+            console.log('✅ URL do WebSocket (de VITE_API_BASE):', wsUrl);
+          } else {
+            // 2️⃣ Se não tem VITE_API_BASE, usar window.location
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const host = window.location.host;
+            wsUrl = `${protocol}//${host}`;
+            console.log('✅ URL do WebSocket (de window.location):', wsUrl);
           }
         } catch (e) {
-          console.warn('⚠️ Erro ao determinar URL WebSocket');
+          console.warn('⚠️ Erro ao determinar URL WebSocket:', e);
+          // Fallback para mesma origem
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const host = window.location.host;
+          wsUrl = `${protocol}//${host}`;
+          console.log('⚠️ Fallback URL:', wsUrl);
+        }
+
+        if (!wsUrl || wsUrl.length === 0) {
+          throw new Error('Não conseguiu determinar URL do WebSocket');
         }
 
         console.log('🔌 Conectando ao WebSocket:', wsUrl);
         ws = new WebSocket(wsUrl);
 
         ws.addEventListener('open', () => {
-          console.log('✅ WebSocket conectado');
+          console.log('✅ WebSocket conectado com sucesso!');
           // Enviar ping periodicamente para manter conexão viva
           const pingInterval = setInterval(() => {
             if (ws && ws.readyState === WebSocket.OPEN) {
@@ -40,10 +61,11 @@ export function useWebSocketSync() {
 
         ws.addEventListener('message', (event) => {
           try {
+            console.log('📨 Mensagem WebSocket recebida:', event.data.slice(0, 100));
             const data = JSON.parse(event.data);
             
             if (data.type === 'products_update') {
-              console.log('📦 Atualização de produtos recebida:', data.payload.length, 'produtos');
+              console.log('📦 🎉 ATUALIZAÇÃO DE PRODUTOS RECEBIDA:', data.payload.length, 'produtos');
               
               // Atualizar o store Zustand com os novos produtos
               const normalizedProducts = data.payload.map((p: any) => ({
@@ -52,9 +74,12 @@ export function useWebSocketSync() {
               }));
               
               useProducts.setState({ products: normalizedProducts });
-              console.log('✅ Produtos sincronizados em tempo real');
+              console.log('✅ Produtos sincronizados em tempo real via WebSocket!');
             } else if (data.type === 'pong') {
               // Resposta do ping do servidor
+              console.log('💓 Pong recebido do servidor');
+            } else {
+              console.log('❓ Mensagem de tipo desconhecido:', data.type);
             }
           } catch (error) {
             console.warn('⚠️ Erro ao processar mensagem WebSocket:', error);
