@@ -2,8 +2,6 @@ import { useEffect } from 'react';
 import { useProducts } from './useProducts';
 
 export function useWebSocketSync() {
-  const { products: currentProducts } = useProducts();
-
   useEffect(() => {
     let ws: WebSocket | null = null;
     let reconnectTimeout: NodeJS.Timeout | null = null;
@@ -111,8 +109,9 @@ export function useWebSocketSync() {
           ws = socket;
           console.log('✅ WebSocket CONECTADO COM SUCESSO!');
           
-          // Inicializar hash ao conectar
-          lastProductHash = getProductsHash(currentProducts);
+          // Inicializar hash ao conectar (pega do estado atual)
+          const currentState = useProducts.getState();
+          lastProductHash = getProductsHash(currentState.products);
 
           // Ping para manter vivo
           const pingInterval = setInterval(() => {
