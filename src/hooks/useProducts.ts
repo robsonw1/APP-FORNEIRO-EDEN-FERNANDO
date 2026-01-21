@@ -22,17 +22,15 @@ export const useProducts = create<ProductsStore>()(
       syncProducts: async () => {
         try {
           set({ isLoading: true });
-          
-          // 🔄 Buscar produtos do servidor
+
           let apiUrl = '/api/products';
           try {
-            // @ts-ignore
             const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : '';
             if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
               apiUrl = `${apiBase}/api/products`;
             }
           } catch (e) {}
-          
+
           const response = await fetch(apiUrl);
           if (response.ok) {
             const remoteProducts = await response.json();
@@ -40,9 +38,11 @@ export const useProducts = create<ProductsStore>()(
             set({ products: remoteProducts });
           } else {
             console.warn('⚠️ Falha ao sincronizar produtos do servidor, usando cache local');
+            set({ products: initialProducts });
           }
         } catch (error) {
           console.warn('⚠️ Erro ao sincronizar produtos:', error);
+          set({ products: initialProducts });
         } finally {
           set({ isLoading: false });
         }
@@ -105,15 +105,13 @@ export const useProducts = create<ProductsStore>()(
           
           if (response.ok) {
             console.log('✅ Produto criado no servidor:', newProduct.id);
+            set((state) => ({ products: [newProduct, ...state.products] }));
           } else {
             console.warn('⚠️ Falha ao criar produto no servidor');
           }
         } catch (error) {
           console.warn('⚠️ Erro ao criar produto:', error);
         }
-        
-        // ✅ Atualizar localmente imediatamente
-        set((state) => ({ products: [newProduct, ...state.products] }));
       },
       
       deleteProduct: async (productId: string) => {
