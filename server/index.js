@@ -1221,34 +1221,66 @@ const wss = new WebSocketServer({ server });
 const wsClients = new Set();
 
 wss.on('connection', (socket) => {
-  console.log('WebSocket client connected');
+  console.log('🎯 WebSocket client CONECTADO - Total de clientes:', wsClients.size + 1);
   wsClients.add(socket);
+  
   socket.on('close', () => {
     wsClients.delete(socket);
-    console.log('WebSocket client disconnected');
+    console.log('⚠️ WebSocket client DESCONECTADO - Total de clientes restantes:', wsClients.size);
   });
+  
+  socket.on('error', (error) => {
+    console.error('❌ WebSocket error:', error);
+  });
+  
   socket.on('message', (msg) => {
     // simple ping handling
-    if (String(msg) === 'ping') socket.send('pong');
+    const msgStr = String(msg);
+    if (msgStr === 'ping') {
+      socket.send('pong');
+      console.log('💓 Ping recebido e pong enviado');
+    } else {
+      console.log('📨 Mensagem WebSocket recebida:', msgStr.slice(0, 50));
+    }
   });
 });
 
 function tryBroadcastPayment(payload) {
   const message = JSON.stringify({ type: 'payment_update', payload });
+  console.log('📤 Tentando broadcast de pagamento para', wsClients.size, 'cliente(s)');
+  
+  let sent = 0;
   for (const c of wsClients) {
     if (c.readyState === c.OPEN) {
-      try { c.send(message); } catch (e) { console.warn('Failed to send ws message', e); }
+      try {
+        c.send(message);
+        sent++;
+      } catch (e) {
+        console.warn('❌ Falha ao enviar payment broadcast:', e.message);
+      }
     }
   }
+  
+  console.log('✅ Payment broadcast enviado para', sent, 'cliente(s) conectado(s)');
 }
 
 function tryBroadcastProducts(products) {
   const message = JSON.stringify({ type: 'products_update', payload: products });
+  console.log('📤 Tentando broadcast de produtos para', wsClients.size, 'cliente(s)');
+  
+  let sent = 0;
   for (const c of wsClients) {
     if (c.readyState === c.OPEN) {
-      try { c.send(message); } catch (e) { console.warn('Failed to send products broadcast', e); }
+      try {
+        c.send(message);
+        sent++;
+      } catch (e) {
+        console.warn('❌ Falha ao enviar produtos broadcast:', e.message);
+      }
     }
   }
+  
+  console.log('✅ Produtos broadcast enviado para', sent, 'cliente(s) conectado(s)');
 }
 
 // ========================================
