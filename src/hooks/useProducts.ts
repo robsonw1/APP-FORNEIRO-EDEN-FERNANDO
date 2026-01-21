@@ -11,7 +11,6 @@ interface ProductsStore {
   getProductsByCategory: (category: string) => Product[];
   syncProducts: () => Promise<void>;
   isLoading: boolean;
-  lastUpdateTime: number; // Timestamp da última atualização para evitar race conditions
 }
 
 export const useProducts = create<ProductsStore>()(
@@ -22,22 +21,10 @@ export const useProducts = create<ProductsStore>()(
         available: product.available === true ? true : product.available === false ? false : true 
       })),
       isLoading: false,
-      lastUpdateTime: Date.now(),
       
       syncProducts: async () => {
         try {
           set({ isLoading: true });
-          
-          // Verificar se houve atualização recente (nos últimos 2 segundos)
-          const now = Date.now();
-          const timeSinceLastUpdate = now - (get().lastUpdateTime || 0);
-          
-          // Se houve atualização muito recente, não sobrescrever (deixar o usuário editar sem interferência)
-          if (timeSinceLastUpdate < 2000) {
-            console.log('⏳ Atualização recente detectada, aguardando antes de sincronizar...');
-            set({ isLoading: false });
-            return;
-          }
 
           let apiUrl = '/api/products';
           try {
@@ -47,171 +34,168 @@ export const useProducts = create<ProductsStore>()(
             }
           } catch (e) {}
 
-          const response = await fetch(apiUrl);
-          if (response.ok) {
-            const remoteProducts = await response.json();
-            console.log('📥 Produtos sincronizados do servidor:', Array.isArray(remoteProducts) ? remoteProducts.length : 'invalid');
-
-            // Garante que todos os produtos têm 'available' como booleano
-            const normalizedProducts = Array.isArray(remoteProducts) 
-              ? remoteProducts.map(p => ({ 
+          const controller = new AbortController();
+          const timeoutId = setTimeout(() => controller.abort(), 3000); // 3 segundo timeout
+          
+          try {
+            const response = await fetch(apiUrl, { signal: controller.signal });
+            clearTimeout(timeoutId);
+            
+            if (response.ok) {
+              const remoteProducts = await response.json();
+              if (Array.isArray(remoteProducts) && remoteProducts.length > 0) {
+                const normalizedProducts = remoteProducts.map(p => ({ 
                   ...p, 
                   available: p.available === true ? true : p.available === false ? false : true 
-                }))
-              : initialProducts;
-
-            // Só sobrescreve se o servidor realmente retornar produtos
-            if (Array.isArray(remoteProducts) && remoteProducts.length > 0) {
-              set({ products: normalizedProducts, lastUpdateTime: now });
-            } else {
-              console.warn('⚠️ Servidor retornou lista vazia — mantendo catálogo local');
+                }));
+                set({ products: normalizedProducts });
+                console.log('✅ Sincronização bem-sucedida:', remoteProducts.length, 'produtos');
+              }
             }
-          } else {
-            console.warn('⚠️ Falha ao sincronizar produtos do servidor');
+          } catch (timeoutError) {
+            clearTimeout(timeoutId);
+            console.warn('⚠️ Timeout ao sincronizar com servidor');
           }
         } catch (error) {
-          console.warn('⚠️ Erro ao sincronizar produtos:', error);
+          console.warn('⚠️ Sincronização com servidor falhou, usando cache local');
         } finally {
           set({ isLoading: false });
         }
       },
       
       updateProduct: async (productId, updates) => {
-        // 📤 Atualizar no servidor PRIMEIRO, aguardando resposta
-        try {
-          let apiUrl = `/api/products/${productId}`;
+        // ✅ PRIMEIRO: Atualizar localmente IMEDIATAMENTE - NÃO ESPERA POR NADA
+        set((state) => ({
+          products: state.products.map((product) =>
+            product.id === productId
+              ? { 
+                  ...product, 
+                  ...updates, 
+                  available: updates.available !== undefined ? updates.available : (product.available ?? true)
+                }
+              : product
+          ),
+        }));
+
+        // 📤 DEPOIS: Tentar sincronizar com servidor (completamente assíncrono)
+        // Se falhar, a atualização local permanece
+        (async () => {
           try {
-            // @ts-ignore
-            const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : '';
-            if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
-              apiUrl = `${apiBase}/api/products/${productId}`;
-            }
-          } catch (e) {}
-          
-          const response = await fetch(apiUrl, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(updates)
-          });
-          
-          if (response.ok) {
-            console.log('✅ Produto atualizado no servidor:', productId);
+            let apiUrl = `/api/products/${productId}`;
+            try {
+              const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : '';
+              if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
+                apiUrl = `${apiBase}/api/products/${productId}`;
+              }
+            } catch (e) {}
             
-            // ✅ Só atualizar localmente APÓS confirmar no servidor
-            set((state) => ({
-              products: state.products.map((product) =>
-                product.id === productId
-                  ? { ...product, ...updates, available: updates.available ?? product.available ?? true }
-                  : product
-              ),
-              lastUpdateTime: Date.now(), // Marcar hora da atualização para evitar sobrescrita pela sync
-            }));
-          } else {
-            console.warn('⚠️ Falha ao atualizar produto no servidor, status:', response.status);
-            // Mostrar erro mas não atualizar localmente se falhar
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
+            
+            const response = await fetch(apiUrl, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updates),
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            
+            if (response.ok) {
+              console.log('✅ Servidor confirmou atualização:', productId);
+            }
+          } catch (error) {
+            console.warn('⚠️ Erro ao sincronizar atualização, mas local foi atualizado:', error.message);
           }
-        } catch (error) {
-          console.warn('⚠️ Erro ao atualizar produto:', error);
-        }
+        })();
       },
       
       createProduct: async (newProduct: Product) => {
-        try {
-          // Garantir que available está definido
-          const productToCreate = { 
-            ...newProduct, 
-            available: newProduct.available === true ? true : newProduct.available === false ? false : true 
-          };
-          
-          // 📤 Criar no servidor PRIMEIRO
-          let apiUrl = '/api/products';
+        const productToCreate = { 
+          ...newProduct, 
+          available: newProduct.available === true ? true : (newProduct.available === false ? false : true)
+        };
+        
+        // ✅ PRIMEIRO: Adicionar localmente IMEDIATAMENTE
+        set((state) => ({ 
+          products: [productToCreate, ...state.products],
+        }));
+
+        // 📤 DEPOIS: Tentar sincronizar com servidor (assíncrono, sem bloquear)
+        (async () => {
           try {
-            // @ts-ignore
-            const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : '';
-            if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
-              apiUrl = `${apiBase}/api/products`;
+            let apiUrl = '/api/products';
+            try {
+              const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : '';
+              if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
+                apiUrl = `${apiBase}/api/products`;
+              }
+            } catch (e) {}
+            
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
+            
+            const response = await fetch(apiUrl, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(productToCreate),
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            
+            if (response.ok) {
+              console.log('✅ Servidor confirmou criação:', productToCreate.id);
             }
-          } catch (e) {}
-          
-          const response = await fetch(apiUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(productToCreate)
-          });
-          
-          if (response.ok) {
-            console.log('✅ Produto criado no servidor:', productToCreate.id);
-            // ✅ Só atualizar localmente APÓS confirmar no servidor
-            set((state) => ({ 
-              products: [productToCreate, ...state.products],
-              lastUpdateTime: Date.now(),
-            }));
-          } else {
-            console.warn('⚠️ Falha ao criar produto no servidor:', response.status);
+          } catch (error) {
+            console.warn('⚠️ Erro ao sincronizar criação, mas local foi criado:', error.message);
           }
-        } catch (error) {
-          console.warn('⚠️ Erro ao criar produto:', error);
-        }
+        })();
       },
       
       deleteProduct: async (productId: string) => {
-        try {
-          // 📤 Deletar no servidor PRIMEIRO
-          let apiUrl = `/api/products/${productId}`;
+        // ✅ PRIMEIRO: Remover localmente IMEDIATAMENTE
+        set((state) => ({ 
+          products: state.products.filter(p => p.id !== productId),
+        }));
+
+        // 📤 DEPOIS: Tentar sincronizar com servidor (assíncrono, sem bloquear)
+        (async () => {
           try {
-            // @ts-ignore
-            const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : '';
-            if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
-              apiUrl = `${apiBase}/api/products/${productId}`;
+            let apiUrl = `/api/products/${productId}`;
+            try {
+              const apiBase = import.meta?.env?.VITE_API_BASE ? String(import.meta.env.VITE_API_BASE) : '';
+              if (apiBase && (apiBase.startsWith('http://') || apiBase.startsWith('https://'))) {
+                apiUrl = `${apiBase}/api/products/${productId}`;
+              }
+            } catch (e) {}
+            
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 3000);
+            
+            const response = await fetch(apiUrl, { 
+              method: 'DELETE',
+              signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            
+            if (response.ok) {
+              console.log('✅ Servidor confirmou exclusão:', productId);
             }
-          } catch (e) {}
-          
-          const response = await fetch(apiUrl, { method: 'DELETE' });
-          
-          if (response.ok) {
-            console.log('✅ Produto deletado do servidor:', productId);
-            // ✅ Só atualizar localmente APÓS confirmar no servidor
-            set((state) => ({ 
-              products: state.products.filter(p => p.id !== productId),
-              lastUpdateTime: Date.now(),
-            }));
-          } else {
-            console.warn('⚠️ Falha ao deletar produto do servidor');
+          } catch (error) {
+            console.warn('⚠️ Erro ao sincronizar exclusão, mas local foi deletado:', error.message);
           }
-        } catch (error) {
-          console.warn('⚠️ Erro ao deletar produto:', error);
-        }
+        })();
       },
       
       getProductsByCategory: (category: string) => {
         const allProducts = get().products;
         if (!allProducts || allProducts.length === 0) {
-          console.warn('⚠️ Nenhum produto disponível para filtrar.');
           return [];
         }
-
-        const filteredProducts = allProducts.filter(product => product.category === category);
-        if (filteredProducts.length === 0) {
-          console.warn(`⚠️ Nenhum produto encontrado para a categoria: ${category}`);
-        }
-
-        return filteredProducts;
+        return allProducts.filter(product => product.category === category);
       },
     }),
     {
       name: 'products-storage',
-      // Ao rehidratar, evite que um valor vazio sobrescreva o catálogo inicial
-      onRehydrateStorage: () => (persistedState) => {
-        try {
-          const persisted = persistedState?.products;
-          console.log('🔁 Rehydrated products-storage:', persisted ? persisted.length : 'none');
-          if (!persisted || (Array.isArray(persisted) && persisted.length === 0)) {
-            console.warn('⚠️ Persistência encontrou products vazios; mantendo catálogo local inicial');
-          }
-        } catch (e) {
-          console.warn('⚠️ Erro onRehydrateStorage:', e);
-        }
-      }
     }
   )
 );
