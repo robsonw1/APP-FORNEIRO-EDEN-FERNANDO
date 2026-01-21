@@ -1242,6 +1242,15 @@ function tryBroadcastPayment(payload) {
   }
 }
 
+function tryBroadcastProducts(products) {
+  const message = JSON.stringify({ type: 'products_update', payload: products });
+  for (const c of wsClients) {
+    if (c.readyState === c.OPEN) {
+      try { c.send(message); } catch (e) { console.warn('Failed to send products broadcast', e); }
+    }
+  }
+}
+
 // ========================================
 // PRODUCTS API - SINCRONIZAÇÃO DE CARDÁPIO
 // ========================================
@@ -1304,6 +1313,7 @@ app.post('/api/products', (req, res) => {
     products.push(newProduct);
     
     if (saveProducts(products)) {
+      tryBroadcastProducts(products);
       res.status(201).json(newProduct);
     } else {
       res.status(500).json({ error: 'Erro ao salvar produto' });
@@ -1332,6 +1342,7 @@ app.put('/api/products/:id', (req, res) => {
     products[productIndex] = updatedProduct;
     
     if (saveProducts(products)) {
+      tryBroadcastProducts(products);
       res.json(updatedProduct);
     } else {
       res.status(500).json({ error: 'Erro ao atualizar produto' });
@@ -1356,6 +1367,7 @@ app.delete('/api/products/:id', (req, res) => {
     }
     
     if (saveProducts(filteredProducts)) {
+      tryBroadcastProducts(filteredProducts);
       res.json({ message: 'Produto deletado com sucesso' });
     } else {
       res.status(500).json({ error: 'Erro ao deletar produto' });
