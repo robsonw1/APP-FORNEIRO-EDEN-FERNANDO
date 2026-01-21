@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useProducts, useProductsSync } from '@/hooks/useProducts';
+import { useWebSocketSync } from '@/hooks/useWebSocketSync';
 import ProductList from './components/ProductList';
 import AddProductModal from './components/AddProductModal';
 import EstablishmentSettings from './components/EstablishmentSettings';
@@ -15,6 +16,7 @@ const Dashboard = () => {
   
   // 🔄 Sincronizar produtos automaticamente
   useProductsSync();
+  useWebSocketSync();
 
   const categorizedProducts = {
     pizzas: products.filter(p => 
