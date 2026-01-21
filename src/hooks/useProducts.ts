@@ -16,7 +16,10 @@ interface ProductsStore {
 export const useProducts = create<ProductsStore>()(
   persist(
     (set, get) => ({
-      products: initialProducts.map(product => ({ ...product, available: product.available ?? true })),
+      products: initialProducts.map(product => ({ 
+        ...product, 
+        available: product.available === true ? true : product.available === false ? false : true 
+      })),
       isLoading: false,
       
       syncProducts: async () => {
@@ -36,25 +39,28 @@ export const useProducts = create<ProductsStore>()(
             const remoteProducts = await response.json();
             console.log('📥 Produtos sincronizados do servidor:', Array.isArray(remoteProducts) ? remoteProducts.length : 'invalid');
 
-            // Garante que todos os produtos têm 'available' definido
-            const productsWithAvailable = Array.isArray(remoteProducts) 
-              ? remoteProducts.map(p => ({ ...p, available: p.available ?? true }))
+            // Garante que todos os produtos têm 'available' como booleano
+            const normalizedProducts = Array.isArray(remoteProducts) 
+              ? remoteProducts.map(p => ({ 
+                  ...p, 
+                  available: p.available === true ? true : p.available === false ? false : true 
+                }))
               : initialProducts;
 
             // Só sobrescreve se o servidor realmente retornar produtos
             if (Array.isArray(remoteProducts) && remoteProducts.length > 0) {
-              set({ products: productsWithAvailable });
+              set({ products: normalizedProducts });
             } else {
               console.warn('⚠️ Servidor retornou lista vazia — mantendo catálogo local');
-              set({ products: initialProducts.map(p => ({ ...p, available: p.available ?? true })) });
+              set({ products: initialProducts.map(p => ({ ...p, available: p.available === true ? true : p.available === false ? false : true })) });
             }
           } else {
             console.warn('⚠️ Falha ao sincronizar produtos do servidor, usando cache local');
-            set({ products: initialProducts.map(p => ({ ...p, available: p.available ?? true })) });
+            set({ products: initialProducts.map(p => ({ ...p, available: p.available === true ? true : p.available === false ? false : true })) });
           }
         } catch (error) {
           console.warn('⚠️ Erro ao sincronizar produtos:', error);
-          set({ products: initialProducts.map(p => ({ ...p, available: p.available ?? true })) });
+          set({ products: initialProducts.map(p => ({ ...p, available: p.available === true ? true : p.available === false ? false : true })) });
         } finally {
           set({ isLoading: false });
         }
