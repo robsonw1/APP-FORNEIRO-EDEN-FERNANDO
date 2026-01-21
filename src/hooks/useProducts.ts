@@ -144,7 +144,18 @@ export const useProducts = create<ProductsStore>()(
       },
       
       getProductsByCategory: (category: string) => {
-        return get().products.filter(product => product.category === category);
+        const allProducts = get().products;
+        if (!allProducts || allProducts.length === 0) {
+          console.warn('⚠️ Nenhum produto disponível para filtrar.');
+          return [];
+        }
+
+        const filteredProducts = allProducts.filter(product => product.category === category);
+        if (filteredProducts.length === 0) {
+          console.warn(`⚠️ Nenhum produto encontrado para a categoria: ${category}`);
+        }
+
+        return filteredProducts;
       },
     }),
     {
