@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Header from "@/components/Header";
 import CategorySection from "@/components/CategorySection";
 import MobileMenuAccordion from "@/components/MobileMenuAccordion";
@@ -161,6 +161,10 @@ const Index = () => {
       }
     }
   };
+
+  useEffect(() => {
+    console.log('🔍 Produtos carregados:', products);
+  }, [products]);
 
   return (
     <div className="min-h-screen bg-gradient-accent">
